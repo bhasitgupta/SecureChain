@@ -1,0 +1,110 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.identityRoutes = void 0;
+const common_1 = require("@sih26125/common");
+const contracts_1 = require("@sih26125/contracts");
+const config_js_1 = require("../config.js");
+const db_js_1 = require("../db.js");
+const chain_js_1 = require("../chain.js");
+const identityRoutes = async (fastify) => {
+    // GET /api/identity - list all cached identities
+    fastify.get('/', async (_req, _reply) => {
+        const res = await (0, db_js_1.query)(`SELECT did_hash, did, subject_id, account, status, created_at, updated_at
+       FROM identities ORDER BY created_at DESC LIMIT 100`);
+        return { identities: res.rows };
+    });
+    // GET /api/identity/by-account/:address
+    fastify.get('/by-account/:address', async (req, reply) => {
+        const { address } = req.params;
+        const res = await (0, db_js_1.query)(`SELECT did_hash, did, subject_id, account, status, created_at, updated_at
+       FROM identities WHERE LOWER(account) = LOWER($1)`, [address]);
+        if (res.rows.length > 0) {
+            return res.rows[0];
+        }
+        // Try reading from contract if contract address configured
+        if (config_js_1.config.iamAddress) {
+            try {
+                const didHash = await chain_js_1.publicClient.readContract({
+                    address: config_js_1.config.iamAddress,
+                    abi: contracts_1.IdentityAndAccessManagerAbi,
+                    functionName: 'getDidByAccount',
+                    args: [address],
+                });
+                if (didHash && didHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
+                    const rec = await chain_js_1.publicClient.readContract({
+                        address: config_js_1.config.iamAddress,
+                        abi: contracts_1.IdentityAndAccessManagerAbi,
+                        functionName: 'getIdentity',
+                        args: [didHash],
+                    });
+                    const did = (0, common_1.formatDidPkh)(config_js_1.config.chainId, address);
+                    await (0, db_js_1.query)(`INSERT INTO identities (did_hash, did, subject_id, account, status, updated_at)
+             VALUES ($1, $2, $3, $4, 'Active', NOW())
+             ON CONFLICT (did_hash) DO UPDATE SET updated_at = NOW()`, [didHash, did, rec.subjectId, address.toLowerCase()]);
+                    return {
+                        didHash,
+                        did,
+                        subjectId: rec.subjectId,
+                        account: address.toLowerCase(),
+                        status: rec.status === 1 ? 'Active' : 'Inactive',
+                    };
+                }
+            }
+            catch (err) {
+                req.log.warn({ err }, 'Contract read failed for getDidByAccount');
+            }
+        }
+        return reply.status(404).send({ error: 'Identity not found for address' });
+    });
+    // GET /api/identity/:didHash
+    fastify.get('/:didHash', async (req, reply) => {
+        const { didHash } = req.params;
+        const res = await (0, db_js_1.query)(`SELECT did_hash, did, subject_id, account, status, created_at, updated_at
+       FROM identities WHERE did_hash = $1`, [didHash]);
+        if (res.rows.length > 0) {
+            return res.rows[0];
+        }
+        return reply.status(404).send({ error: 'Identity not found' });
+    });
+    // POST /api/identity - Register identity
+    fastify.post('/', async (req, reply) => {
+        const parsed = common_1.RegisterIdentitySchema.safeParse(req.body);
+        if (!parsed.success) {
+            return reply.status(400).send({ error: parsed.error.issues[0].message });
+        }
+        const { account, subjectId } = parsed.data;
+        const did = (0, common_1.formatDidPkh)(config_js_1.config.chainId, account);
+        const didHash = (0, common_1.hashDid)(did);
+        let txHash;
+        // If IAM contract is configured and admin signer exists, submit transaction on chain
+        if (config_js_1.config.iamAddress && chain_js_1.walletClient && chain_js_1.adminAccount) {
+            try {
+                txHash = await chain_js_1.walletClient.writeContract({
+                    address: config_js_1.config.iamAddress,
+                    abi: contracts_1.IdentityAndAccessManagerAbi,
+                    functionName: 'registerIdentity',
+                    args: [didHash, account, subjectId],
+                });
+            }
+            catch (err) {
+                req.log.error(err);
+                // Note: Even if contract call reverts (e.g., already registered or no funds), we return meaningful error
+                return reply.status(400).send({ error: 'On-chain registration failed: ' + err.message });
+            }
+        }
+        // Upsert in database
+        await (0, db_js_1.query)(`INSERT INTO identities (did_hash, did, subject_id, account, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'Active', NOW(), NOW())
+       ON CONFLICT (did_hash) DO UPDATE 
+       SET subject_id = $3, account = $4, updated_at = NOW()`, [didHash, did, subjectId, account.toLowerCase()]);
+        return {
+            success: true,
+            did,
+            didHash,
+            account: account.toLowerCase(),
+            subjectId,
+            txHash,
+        };
+    });
+};
+exports.identityRoutes = identityRoutes;

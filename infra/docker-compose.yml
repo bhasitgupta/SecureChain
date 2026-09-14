@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sih-postgres
+    environment:
+      POSTGRES_DB: sih26125
+      POSTGRES_USER: sih
+      POSTGRES_PASSWORD: sih26125
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sih -d sih26125"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sih-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: sih-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: sih-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/documents;
+      mc mb --ignore-existing local/ocr-output;
+      mc mb --ignore-existing local/asset-thumbnails;
+      mc mb --ignore-existing local/doc-thumbnails;
+      mc version enable local/documents;
+      echo 'MinIO buckets ready';
+      "
+
+volumes:
+  pgdata:
+  miniodata:

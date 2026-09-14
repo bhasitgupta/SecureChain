@@ -1,0 +1,22 @@
+{
+  "name": "sih26125",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces --if-present build",
+    "dev:backend": "npm --workspace services/gateway run dev",
+    "dev:workers": "npm --workspace services/workers run dev",
+    "dev:indexer": "npm --workspace services/indexer run dev",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

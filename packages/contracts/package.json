@@ -1,0 +1,17 @@
+{
+  "name": "@sih26125/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "viem": "^2.21.32"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

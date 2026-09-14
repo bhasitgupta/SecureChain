@@ -1,0 +1,85 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.RecoveryManagerAbi = exports.DocumentAnchorRegistryAbi = exports.EnterpriseAssetNFTAbi = exports.IdentityAndAccessManagerAbi = void 0;
+const viem_1 = require("viem");
+exports.IdentityAndAccessManagerAbi = (0, viem_1.parseAbi)([
+    'function ADMIN_ROLE() view returns (bytes32)',
+    'function MANAGER_ROLE() view returns (bytes32)',
+    'function AUDITOR_ROLE() view returns (bytes32)',
+    'function USER_ROLE() view returns (bytes32)',
+    'function PERM_MINT() view returns (uint256)',
+    'function PERM_ALLOCATE() view returns (uint256)',
+    'function PERM_TRANSFER() view returns (uint256)',
+    'function PERM_ANCHOR() view returns (uint256)',
+    'function PERM_AUDIT() view returns (uint256)',
+    'function hasRole(bytes32 role, address acct) view returns (bool)',
+    'function getPermissions(bytes32 role) view returns (uint256)',
+    'function hasPermission(address acct, uint256 bit) view returns (bool)',
+    'function grantRole(bytes32 role, address acct)',
+    'function revokeRole(bytes32 role, address acct)',
+    'function updateRolePermissions(bytes32 role, uint256 perms)',
+    'function registerIdentity(bytes32 didHash, address acct, string calldata subjectId)',
+    'function bindAccount(bytes32 didHash, address newAcct)',
+    'function updateIdentityStatus(bytes32 didHash, uint8 s)',
+    'function getIdentity(bytes32 didHash) view returns ((bytes32 didHash, address account, string subjectId, uint8 status, uint256 createdAt, uint256 updatedAt))',
+    'function getDidByAccount(address acct) view returns (bytes32)',
+    'function isIdentityActive(bytes32 didHash) view returns (bool)',
+    'event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender)',
+    'event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender)',
+    'event PermissionUpdated(bytes32 indexed role, uint256 newPerms, address indexed sender)',
+    'event IdentityRegistered(bytes32 indexed didHash, address indexed account, string subjectId)',
+    'event AccountBound(bytes32 indexed didHash, address indexed oldAcct, address indexed newAcct)',
+    'event IdentityStatusChanged(bytes32 indexed didHash, uint8 oldStatus, uint8 newStatus)'
+]);
+exports.EnterpriseAssetNFTAbi = (0, viem_1.parseAbi)([
+    'function name() view returns (string)',
+    'function symbol() view returns (string)',
+    'function iam() view returns (address)',
+    'function mint(address to, bytes32 didHash, string calldata assetClass, string calldata metadataURI) returns (uint256 tokenId)',
+    'function allocateInitial(uint256 tokenId, address to, bytes32 toDidHash)',
+    'function authorizeTransfer(uint256 tokenId, address from, address to, bytes32 toDidHash)',
+    'function retireAsset(uint256 tokenId, string calldata reason)',
+    'function ownerOf(uint256 tokenId) view returns (address)',
+    'function balanceOf(address o) view returns (uint256)',
+    'function getAsset(uint256 tokenId) view returns ((uint256 tokenId, bytes32 didHash, string assetClass, uint8 status, string metadataURI, uint256 mintedAt))',
+    'function exists(uint256 tokenId) view returns (bool)',
+    'function tokenURI(uint256 tokenId) view returns (string)',
+    'function approve(address to, uint256 tokenId)',
+    'function setApprovalForAll(address op, bool ok)',
+    'function getApproved(uint256 tokenId) view returns (address)',
+    'function isApprovedForAll(address o, address op) view returns (bool)',
+    'function transferFrom(address from, address to, uint256 tokenId)',
+    'function safeTransferFrom(address from, address to, uint256 tokenId)',
+    'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+    'event AssetMinted(uint256 indexed tokenId, bytes32 indexed didHash, string assetClass)',
+    'event AssetAllocated(uint256 indexed tokenId, address indexed to, bytes32 indexed toDidHash, address actor)',
+    'event AssetTransferAuthorized(uint256 indexed tokenId, address indexed from, address indexed to, address actor)',
+    'event AssetRetired(uint256 indexed tokenId, string reason, address actor)'
+]);
+exports.DocumentAnchorRegistryAbi = (0, viem_1.parseAbi)([
+    'function iam() view returns (address)',
+    'function anchorBatch(bytes32 batchId, bytes32 root, uint256 leafCount)',
+    'function verifyProof(bytes32 batchId, bytes32[] calldata proof, bytes32 leaf) view returns (bool)',
+    'function getBatch(bytes32 batchId) view returns ((bytes32 merkleRoot, uint256 leafCount, uint256 anchoredBlock, uint256 anchoredTime, address anchoredBy, bool exists))',
+    'function isBatchAnchored(bytes32 batchId) view returns (bool)',
+    'event MerkleRootAnchored(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 leafCount, address indexed anchorer)'
+]);
+exports.RecoveryManagerAbi = (0, viem_1.parseAbi)([
+    'function iam() view returns (address)',
+    'function approvedProviders(address) view returns (bool)',
+    'function accounts(address) view returns (address owner, address pendingOwner, uint256 unlockTime, uint256 timelockDuration)',
+    'function usedNonces(bytes32) view returns (bool)',
+    'function registerProvider(address provider)',
+    'function removeProvider(address provider)',
+    'function registerAccount(uint256 timelockDuration)',
+    'function DOMAIN_SEPARATOR() view returns (bytes32)',
+    'function requestRecovery(address account, address proposedOwner, bytes32 nonce, uint256 deadline, bytes calldata signature)',
+    'function cancelRecovery(address account)',
+    'function finalizeRecovery(address account)',
+    'event ProviderRegistered(address indexed provider)',
+    'event ProviderRemoved(address indexed provider)',
+    'event AccountRegistered(address indexed account, address indexed owner, uint256 timelockDuration)',
+    'event RecoveryRequested(address indexed account, address indexed proposedOwner, bytes32 indexed nonce, uint256 unlockTime)',
+    'event RecoveryCancelled(address indexed account, address indexed owner)',
+    'event AccessRecovered(address indexed account, address indexed oldOwner, address indexed newOwner)'
+]);

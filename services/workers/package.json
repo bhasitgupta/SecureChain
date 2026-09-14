@@ -1,0 +1,29 @@
+{
+  "name": "@sih26125/workers",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@sih26125/common": "*",
+    "@sih26125/contracts": "*",
+    "@sih26125/merkle": "*",
+    "bullmq": "^5.21.2",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "minio": "^8.0.2",
+    "pg": "^8.13.1",
+    "sharp": "^0.33.5",
+    "viem": "^2.21.32"
+  },
+  "devDependencies": {
+    "@types/node": "^22.8.7",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
