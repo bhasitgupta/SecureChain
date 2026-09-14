@@ -24,7 +24,7 @@ exports.config = {
     // Admin signer key
     adminPrivateKey: (process.env.ADMIN_PRIVATE_KEY || ''),
     // Database
-    databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5432/sih26125',
+    databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5433/sih26125',
     // Redis
     redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
     // MinIO

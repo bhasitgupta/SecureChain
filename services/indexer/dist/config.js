@@ -11,7 +11,7 @@ dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), '.env') })
 exports.config = {
     polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology',
     chainId: parseInt(process.env.CHAIN_ID || '80002', 10),
-    databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5432/sih26125',
+    databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5433/sih26125',
     contracts: {
         iam: (process.env.IAM_ADDRESS || ''),
         nft: (process.env.NFT_ADDRESS || ''),
