@@ -1,9 +1,8 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { RegisterIdentitySchema, formatDidPkh, hashDid } from '@sih26125/common';
-import { IdentityAndAccessManagerAbi } from '@sih26125/contracts';
 import { config } from '../config.js';
 import { query } from '../db.js';
-import { publicClient, walletClient, adminAccount } from '../chain.js';
+import { getIamContract, adminSigner, provider } from '../chain.js';
 
 export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/identity - list all cached identities
@@ -29,23 +28,13 @@ export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
     }
 
     // Try reading from contract if contract address configured
-    if (config.iamAddress) {
+    const iam = getIamContract(provider);
+    if (config.iamAddress && iam) {
       try {
-        const didHash = await publicClient.readContract({
-          address: config.iamAddress,
-          abi: IdentityAndAccessManagerAbi,
-          functionName: 'getDidByAccount',
-          args: [address as `0x${string}`],
-        });
+        const didHash = await iam.getDidByAccount(address);
 
         if (didHash && didHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
-          const rec = await publicClient.readContract({
-            address: config.iamAddress,
-            abi: IdentityAndAccessManagerAbi,
-            functionName: 'getIdentity',
-            args: [didHash],
-          });
-
+          const rec = await iam.getIdentity(didHash);
           const did = formatDidPkh(config.chainId, address);
           await query(
             `INSERT INTO identities (did_hash, did, subject_id, account, status, updated_at)
@@ -59,7 +48,7 @@ export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
             did,
             subjectId: rec.subjectId,
             account: address.toLowerCase(),
-            status: rec.status === 1 ? 'Active' : 'Inactive',
+            status: Number(rec.status) === 1 ? 'Active' : 'Inactive',
           };
         }
       } catch (err) {
@@ -99,18 +88,14 @@ export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
 
     let txHash: string | undefined;
 
-    // If IAM contract is configured and admin signer exists, submit transaction on chain
-    if (config.iamAddress && walletClient && adminAccount) {
+    const iam = getIamContract(adminSigner);
+    if (config.iamAddress && iam && adminSigner) {
       try {
-        txHash = await walletClient.writeContract({
-          address: config.iamAddress,
-          abi: IdentityAndAccessManagerAbi,
-          functionName: 'registerIdentity',
-          args: [didHash, account as `0x${string}`, subjectId],
-        });
+        const tx = await iam.registerIdentity(didHash, account, subjectId);
+        txHash = tx.hash;
+        await tx.wait();
       } catch (err: any) {
         req.log.error(err);
-        // Note: Even if contract call reverts (e.g., already registered or no funds), we return meaningful error
         return reply.status(400).send({ error: 'On-chain registration failed: ' + err.message });
       }
     }

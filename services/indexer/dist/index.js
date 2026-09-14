@@ -1,22 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const viem_1 = require("viem");
+const ethers_1 = require("ethers");
 const contracts_1 = require("@sih26125/contracts");
 const config_js_1 = require("./config.js");
 const db_js_1 = require("./db.js");
-const polygonAmoy = (0, viem_1.defineChain)({
-    id: config_js_1.config.chainId,
-    name: 'Polygon Amoy',
-    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-    rpcUrls: {
-        default: { http: [config_js_1.config.polygonRpcUrl] },
-    },
-    testnet: true,
-});
-const client = (0, viem_1.createPublicClient)({
-    chain: polygonAmoy,
-    transport: (0, viem_1.http)(config_js_1.config.polygonRpcUrl),
-});
+const provider = new ethers_1.ethers.JsonRpcProvider(config_js_1.config.polygonRpcUrl);
 console.log('🔍 SIH26125 Blockchain Indexer starting...');
 async function getCheckpoint(contractAddress) {
     const res = await (0, db_js_1.query)(`SELECT last_block FROM indexer_checkpoints WHERE contract_address = $1`, [contractAddress.toLowerCase()]);
@@ -34,7 +22,7 @@ async function indexContractEvents(contractAddress, abi, contractName) {
     if (!contractAddress || contractAddress === '0x')
         return;
     try {
-        const currentBlock = await client.getBlockNumber();
+        const currentBlock = BigInt(await provider.getBlockNumber());
         let fromBlock = await getCheckpoint(contractAddress);
         if (fromBlock === 0n) {
             // Start near head if no checkpoint (e.g. 1000 blocks back)
@@ -42,35 +30,37 @@ async function indexContractEvents(contractAddress, abi, contractName) {
         }
         if (fromBlock >= currentBlock)
             return;
-        const toBlock = currentBlock - fromBlock > config_js_1.config.blockBatchSize
-            ? fromBlock + config_js_1.config.blockBatchSize
+        const toBlock = currentBlock - fromBlock > BigInt(config_js_1.config.blockBatchSize)
+            ? fromBlock + BigInt(config_js_1.config.blockBatchSize)
             : currentBlock;
-        const logs = await client.getLogs({
+        const iface = new ethers_1.ethers.Interface(abi);
+        const logs = await provider.getLogs({
             address: contractAddress,
-            fromBlock,
-            toBlock,
+            fromBlock: Number(fromBlock),
+            toBlock: Number(toBlock),
         });
         for (const log of logs) {
             try {
-                const decoded = (0, viem_1.decodeEventLog)({
-                    abi,
-                    data: log.data,
+                const parsed = iface.parseLog({
                     topics: log.topics,
+                    data: log.data,
                 });
+                if (!parsed)
+                    continue;
                 // Convert bigints to strings for JSON serialization
-                const sanitizedArgs = JSON.parse(JSON.stringify(decoded.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)));
+                const sanitizedArgs = JSON.parse(JSON.stringify(parsed.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v)));
                 await (0, db_js_1.query)(`INSERT INTO audit_events 
            (contract_addr, event_name, block_number, tx_hash, log_index, decoded, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW())
            ON CONFLICT (tx_hash, log_index) DO NOTHING`, [
                     contractAddress.toLowerCase(),
-                    decoded.eventName,
+                    parsed.name,
                     Number(log.blockNumber),
                     log.transactionHash,
-                    log.logIndex || 0,
+                    log.index || 0,
                     JSON.stringify(sanitizedArgs),
                 ]);
-                console.log(`[Indexer] Indexed ${contractName}.${decoded.eventName} at block ${log.blockNumber}`);
+                console.log(`[Indexer] Indexed ${contractName}.${parsed.name} at block ${log.blockNumber}`);
             }
             catch {
                 // Unrecognized event log for this ABI, skip

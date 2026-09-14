@@ -2,47 +2,26 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rolesRoutes = void 0;
 const common_1 = require("@sih26125/common");
-const contracts_1 = require("@sih26125/contracts");
 const config_js_1 = require("../config.js");
 const chain_js_1 = require("../chain.js");
 const rolesRoutes = async (fastify) => {
     // GET /api/roles/:address - check roles for address
     fastify.get('/:address', async (req, _reply) => {
         const { address } = req.params;
-        const acct = address;
         const roleMap = {
             ADMIN_ROLE: false,
             MANAGER_ROLE: false,
             AUDITOR_ROLE: false,
             USER_ROLE: false,
         };
-        if (config_js_1.config.iamAddress) {
+        const iam = (0, chain_js_1.getIamContract)(chain_js_1.provider);
+        if (config_js_1.config.iamAddress && iam) {
             try {
                 const [isAdmin, isManager, isAuditor, isUser] = await Promise.all([
-                    chain_js_1.publicClient.readContract({
-                        address: config_js_1.config.iamAddress,
-                        abi: contracts_1.IdentityAndAccessManagerAbi,
-                        functionName: 'hasRole',
-                        args: [common_1.Roles.ADMIN, acct],
-                    }),
-                    chain_js_1.publicClient.readContract({
-                        address: config_js_1.config.iamAddress,
-                        abi: contracts_1.IdentityAndAccessManagerAbi,
-                        functionName: 'hasRole',
-                        args: [common_1.Roles.MANAGER, acct],
-                    }),
-                    chain_js_1.publicClient.readContract({
-                        address: config_js_1.config.iamAddress,
-                        abi: contracts_1.IdentityAndAccessManagerAbi,
-                        functionName: 'hasRole',
-                        args: [common_1.Roles.AUDITOR, acct],
-                    }),
-                    chain_js_1.publicClient.readContract({
-                        address: config_js_1.config.iamAddress,
-                        abi: contracts_1.IdentityAndAccessManagerAbi,
-                        functionName: 'hasRole',
-                        args: [common_1.Roles.USER, acct],
-                    }),
+                    iam.hasRole(common_1.Roles.ADMIN, address),
+                    iam.hasRole(common_1.Roles.MANAGER, address),
+                    iam.hasRole(common_1.Roles.AUDITOR, address),
+                    iam.hasRole(common_1.Roles.USER, address),
                 ]);
                 roleMap.ADMIN_ROLE = isAdmin;
                 roleMap.MANAGER_ROLE = isManager;
@@ -53,7 +32,7 @@ const rolesRoutes = async (fastify) => {
                 req.log.warn({ err }, 'Contract read failed for roles');
             }
         }
-        return { address: acct.toLowerCase(), roles: roleMap };
+        return { address: address.toLowerCase(), roles: roleMap };
     });
     // POST /api/roles/grant - Admin grants role
     fastify.post('/grant', async (req, reply) => {
@@ -63,17 +42,14 @@ const rolesRoutes = async (fastify) => {
         }
         const { role, account } = parsed.data;
         const roleHash = common_1.Roles[role.replace('_ROLE', '')];
-        if (!config_js_1.config.iamAddress || !chain_js_1.walletClient || !chain_js_1.adminAccount) {
+        const iam = (0, chain_js_1.getIamContract)(chain_js_1.adminSigner);
+        if (!config_js_1.config.iamAddress || !iam || !chain_js_1.adminSigner) {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
-            const txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.iamAddress,
-                abi: contracts_1.IdentityAndAccessManagerAbi,
-                functionName: 'grantRole',
-                args: [roleHash, account],
-            });
-            return { success: true, role, account, txHash };
+            const tx = await iam.grantRole(roleHash, account);
+            await tx.wait();
+            return { success: true, role, account, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);
@@ -88,17 +64,14 @@ const rolesRoutes = async (fastify) => {
         }
         const { role, account } = parsed.data;
         const roleHash = common_1.Roles[role.replace('_ROLE', '')];
-        if (!config_js_1.config.iamAddress || !chain_js_1.walletClient || !chain_js_1.adminAccount) {
+        const iam = (0, chain_js_1.getIamContract)(chain_js_1.adminSigner);
+        if (!config_js_1.config.iamAddress || !iam || !chain_js_1.adminSigner) {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
-            const txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.iamAddress,
-                abi: contracts_1.IdentityAndAccessManagerAbi,
-                functionName: 'revokeRole',
-                args: [roleHash, account],
-            });
-            return { success: true, role, account, txHash };
+            const tx = await iam.revokeRole(roleHash, account);
+            await tx.wait();
+            return { success: true, role, account, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);

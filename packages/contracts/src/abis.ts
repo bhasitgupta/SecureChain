@@ -1,6 +1,4 @@
-import { parseAbi } from 'viem';
-
-export const IdentityAndAccessManagerAbi = parseAbi([
+export const IdentityAndAccessManagerAbi = [
   'function ADMIN_ROLE() view returns (bytes32)',
   'function MANAGER_ROLE() view returns (bytes32)',
   'function AUDITOR_ROLE() view returns (bytes32)',
@@ -28,9 +26,9 @@ export const IdentityAndAccessManagerAbi = parseAbi([
   'event IdentityRegistered(bytes32 indexed didHash, address indexed account, string subjectId)',
   'event AccountBound(bytes32 indexed didHash, address indexed oldAcct, address indexed newAcct)',
   'event IdentityStatusChanged(bytes32 indexed didHash, uint8 oldStatus, uint8 newStatus)'
-]);
+] as const;
 
-export const EnterpriseAssetNFTAbi = parseAbi([
+export const EnterpriseAssetNFTAbi = [
   'function name() view returns (string)',
   'function symbol() view returns (string)',
   'function iam() view returns (address)',
@@ -54,18 +52,18 @@ export const EnterpriseAssetNFTAbi = parseAbi([
   'event AssetAllocated(uint256 indexed tokenId, address indexed to, bytes32 indexed toDidHash, address actor)',
   'event AssetTransferAuthorized(uint256 indexed tokenId, address indexed from, address indexed to, address actor)',
   'event AssetRetired(uint256 indexed tokenId, string reason, address actor)'
-]);
+] as const;
 
-export const DocumentAnchorRegistryAbi = parseAbi([
+export const DocumentAnchorRegistryAbi = [
   'function iam() view returns (address)',
   'function anchorBatch(bytes32 batchId, bytes32 root, uint256 leafCount)',
   'function verifyProof(bytes32 batchId, bytes32[] calldata proof, bytes32 leaf) view returns (bool)',
   'function getBatch(bytes32 batchId) view returns ((bytes32 merkleRoot, uint256 leafCount, uint256 anchoredBlock, uint256 anchoredTime, address anchoredBy, bool exists))',
   'function isBatchAnchored(bytes32 batchId) view returns (bool)',
   'event MerkleRootAnchored(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 leafCount, address indexed anchorer)'
-]);
+] as const;
 
-export const RecoveryManagerAbi = parseAbi([
+export const RecoveryManagerAbi = [
   'function iam() view returns (address)',
   'function approvedProviders(address) view returns (bool)',
   'function accounts(address) view returns (address owner, address pendingOwner, uint256 unlockTime, uint256 timelockDuration)',
@@ -83,4 +81,4 @@ export const RecoveryManagerAbi = parseAbi([
   'event RecoveryRequested(address indexed account, address indexed proposedOwner, bytes32 indexed nonce, uint256 unlockTime)',
   'event RecoveryCancelled(address indexed account, address indexed owner)',
   'event AccessRecovered(address indexed account, address indexed oldOwner, address indexed newOwner)'
-]);
+] as const;

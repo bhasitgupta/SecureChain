@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyRoutes = void 0;
 const crypto_1 = require("crypto");
 const merkle_1 = require("@sih26125/merkle");
-const contracts_1 = require("@sih26125/contracts");
 const config_js_1 = require("../config.js");
 const db_js_1 = require("../db.js");
 const minio_js_1 = require("../minio.js");
@@ -94,19 +93,18 @@ const verifyRoutes = async (fastify) => {
         // Step 4: Verify against Polygon on-chain anchor contract
         if (config_js_1.config.anchorAddress && row.batch_id) {
             try {
-                const batchRecord = await chain_js_1.publicClient.readContract({
-                    address: config_js_1.config.anchorAddress,
-                    abi: contracts_1.DocumentAnchorRegistryAbi,
-                    functionName: 'getBatch',
-                    args: [row.batch_id],
-                });
-                anchoredRoot = batchRecord.merkleRoot;
-                if (batchRecord.exists &&
-                    anchoredRoot.toLowerCase() === recordedRoot.toLowerCase()) {
-                    steps.polygonAnchorMatch = true;
-                }
-                else {
-                    failureReason = `Anchored root on Polygon (${anchoredRoot}) does not match recorded root (${recordedRoot})`;
+                const anchor = (0, chain_js_1.getAnchorContract)(chain_js_1.provider);
+                if (anchor) {
+                    const batchRecord = await anchor.getBatch(row.batch_id);
+                    anchoredRoot = batchRecord[0] ?? batchRecord.merkleRoot;
+                    const exists = batchRecord[5] ?? batchRecord.exists;
+                    if (exists &&
+                        anchoredRoot.toLowerCase() === recordedRoot.toLowerCase()) {
+                        steps.polygonAnchorMatch = true;
+                    }
+                    else {
+                        failureReason = `Anchored root on Polygon (${anchoredRoot}) does not match recorded root (${recordedRoot})`;
+                    }
                 }
             }
             catch (err) {

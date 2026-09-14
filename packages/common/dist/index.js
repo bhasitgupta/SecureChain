@@ -4,7 +4,7 @@ exports.RetireAssetSchema = exports.TransferAssetSchema = exports.AllocateAssetS
 exports.formatDidPkh = formatDidPkh;
 exports.hashDid = hashDid;
 const zod_1 = require("zod");
-const viem_1 = require("viem");
+const ethers_1 = require("ethers");
 // ─── Error Codes ─────────────────────────────────────────────────────────────
 exports.ErrorCodes = {
     AUTH_UNAUTHENTICATED: 'AUTH-001',
@@ -36,10 +36,10 @@ exports.DocumentStates = {
 };
 // ─── RBAC Roles & Permissions ────────────────────────────────────────────────
 exports.Roles = {
-    ADMIN: (0, viem_1.keccak256)((0, viem_1.stringToHex)('ADMIN_ROLE')),
-    MANAGER: (0, viem_1.keccak256)((0, viem_1.stringToHex)('MANAGER_ROLE')),
-    AUDITOR: (0, viem_1.keccak256)((0, viem_1.stringToHex)('AUDITOR_ROLE')),
-    USER: (0, viem_1.keccak256)((0, viem_1.stringToHex)('USER_ROLE')),
+    ADMIN: ethers_1.ethers.id('ADMIN_ROLE'),
+    MANAGER: ethers_1.ethers.id('MANAGER_ROLE'),
+    AUDITOR: ethers_1.ethers.id('AUDITOR_ROLE'),
+    USER: ethers_1.ethers.id('USER_ROLE'),
 };
 exports.Permissions = {
     MINT: 1n << 0n,
@@ -53,7 +53,7 @@ function formatDidPkh(chainId, address) {
     return `did:pkh:eip155:${chainId}:${address.toLowerCase()}`;
 }
 function hashDid(did) {
-    return (0, viem_1.keccak256)((0, viem_1.stringToHex)(did));
+    return ethers_1.ethers.id(did);
 }
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
 exports.RegisterIdentitySchema = zod_1.z.object({

@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseAbiItem, defineChain, type Address, decodeEventLog } from 'viem';
+import { ethers } from 'ethers';
 import {
   IdentityAndAccessManagerAbi,
   EnterpriseAssetNFTAbi,
@@ -8,20 +8,7 @@ import {
 import { config } from './config.js';
 import { query } from './db.js';
 
-const polygonAmoy = defineChain({
-  id: config.chainId,
-  name: 'Polygon Amoy',
-  nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-  rpcUrls: {
-    default: { http: [config.polygonRpcUrl] },
-  },
-  testnet: true,
-});
-
-const client = createPublicClient({
-  chain: polygonAmoy,
-  transport: http(config.polygonRpcUrl),
-});
+const provider = new ethers.JsonRpcProvider(config.polygonRpcUrl);
 
 console.log('🔍 SIH26125 Blockchain Indexer starting...');
 
@@ -46,14 +33,14 @@ async function setCheckpoint(contractAddress: string, blockNumber: bigint) {
 }
 
 async function indexContractEvents(
-  contractAddress: Address,
-  abi: any,
+  contractAddress: string,
+  abi: readonly string[],
   contractName: string
 ) {
   if (!contractAddress || contractAddress === '0x') return;
 
   try {
-    const currentBlock = await client.getBlockNumber();
+    const currentBlock = BigInt(await provider.getBlockNumber());
     let fromBlock = await getCheckpoint(contractAddress);
 
     if (fromBlock === 0n) {
@@ -64,27 +51,30 @@ async function indexContractEvents(
     if (fromBlock >= currentBlock) return;
 
     const toBlock =
-      currentBlock - fromBlock > config.blockBatchSize
-        ? fromBlock + config.blockBatchSize
+      currentBlock - fromBlock > BigInt(config.blockBatchSize)
+        ? fromBlock + BigInt(config.blockBatchSize)
         : currentBlock;
 
-    const logs = await client.getLogs({
+    const iface = new ethers.Interface(abi);
+
+    const logs = await provider.getLogs({
       address: contractAddress,
-      fromBlock,
-      toBlock,
+      fromBlock: Number(fromBlock),
+      toBlock: Number(toBlock),
     });
 
     for (const log of logs) {
       try {
-        const decoded: any = decodeEventLog({
-          abi,
+        const parsed = iface.parseLog({
+          topics: log.topics as string[],
           data: log.data,
-          topics: log.topics,
         });
+
+        if (!parsed) continue;
 
         // Convert bigints to strings for JSON serialization
         const sanitizedArgs = JSON.parse(
-          JSON.stringify(decoded.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+          JSON.stringify(parsed.args, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
         );
 
         await query(
@@ -94,15 +84,15 @@ async function indexContractEvents(
            ON CONFLICT (tx_hash, log_index) DO NOTHING`,
           [
             contractAddress.toLowerCase(),
-            decoded.eventName,
+            parsed.name,
             Number(log.blockNumber),
             log.transactionHash,
-            log.logIndex || 0,
+            log.index || 0,
             JSON.stringify(sanitizedArgs),
           ]
         );
 
-        console.log(`[Indexer] Indexed ${contractName}.${decoded.eventName} at block ${log.blockNumber}`);
+        console.log(`[Indexer] Indexed ${contractName}.${parsed.name} at block ${log.blockNumber}`);
       } catch {
         // Unrecognized event log for this ABI, skip
       }

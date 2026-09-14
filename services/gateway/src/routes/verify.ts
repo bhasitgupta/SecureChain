@@ -5,7 +5,7 @@ import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { getObject } from '../minio.js';
-import { publicClient } from '../chain.js';
+import { getAnchorContract, provider } from '../chain.js';
 
 export const verifyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // POST /api/verify/:versionId - Run full 4-step cryptographic verification
@@ -37,7 +37,7 @@ export const verifyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     };
 
     let computedSha256 = '';
-    let computedLeaf: `0x${string}` = '0x0000000000000000000000000000000000000000000000000000000000000000';
+    let computedLeaf: string = '0x0000000000000000000000000000000000000000000000000000000000000000';
     let anchoredRoot = '';
     let failureReason: string | undefined;
 
@@ -81,8 +81,8 @@ export const verifyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
 
     // Step 3: Compute leaf hash and verify Merkle inclusion proof
     computedLeaf = hashLeaf(row.document_id, row.version_id, computedSha256);
-    const proofArray = (row.proof_json || []) as `0x${string}`[];
-    const recordedRoot = row.merkle_root as `0x${string}`;
+    const proofArray = (row.proof_json || []) as string[];
+    const recordedRoot = row.merkle_root as string;
 
     if (recordedRoot && proofArray.length > 0) {
       const isMerkleValid = verifyProof(computedLeaf, proofArray, recordedRoot);
@@ -101,21 +101,19 @@ export const verifyRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     // Step 4: Verify against Polygon on-chain anchor contract
     if (config.anchorAddress && row.batch_id) {
       try {
-        const batchRecord = await publicClient.readContract({
-          address: config.anchorAddress,
-          abi: DocumentAnchorRegistryAbi,
-          functionName: 'getBatch',
-          args: [row.batch_id as `0x${string}`],
-        });
-
-        anchoredRoot = batchRecord.merkleRoot;
-        if (
-          batchRecord.exists &&
-          anchoredRoot.toLowerCase() === recordedRoot.toLowerCase()
-        ) {
-          steps.polygonAnchorMatch = true;
-        } else {
-          failureReason = `Anchored root on Polygon (${anchoredRoot}) does not match recorded root (${recordedRoot})`;
+        const anchor = getAnchorContract(provider);
+        if (anchor) {
+          const batchRecord = await anchor.getBatch(row.batch_id);
+          anchoredRoot = batchRecord[0] ?? batchRecord.merkleRoot;
+          const exists = batchRecord[5] ?? batchRecord.exists;
+          if (
+            exists &&
+            anchoredRoot.toLowerCase() === recordedRoot.toLowerCase()
+          ) {
+            steps.polygonAnchorMatch = true;
+          } else {
+            failureReason = `Anchored root on Polygon (${anchoredRoot}) does not match recorded root (${recordedRoot})`;
+          }
         }
       } catch (err: any) {
         // If contract not deployed or batch not anchored on chain yet

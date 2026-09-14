@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { verifyMessage } from 'viem';
+import { ethers } from 'ethers';
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import { config } from '../config.js';
@@ -30,13 +30,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
     }
 
     try {
-      const isValid = await verifyMessage({
-        address: address as `0x${string}`,
-        message,
-        signature: signature as `0x${string}`,
-      });
-
-      if (!isValid) {
+      const recovered = ethers.verifyMessage(message, signature);
+      if (recovered.toLowerCase() !== address.toLowerCase()) {
         return reply.status(401).send({ error: 'Signature verification failed' });
       }
 

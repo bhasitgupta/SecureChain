@@ -6,7 +6,7 @@ import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
 import { config } from './config.js';
 import { query, pool } from './db.js';
 import { getObject, putObject } from './minio.js';
-import { publicClient, walletClient, adminAccount } from './chain.js';
+import { getAnchorContract, adminSigner, provider } from './chain.js';
 
 const redis = new Redis(config.redisUrl, {
   maxRetriesPerRequest: null,
@@ -151,7 +151,7 @@ async function checkAndFlushMerkleBatch() {
 // Submits anchorBatch transaction to DocumentAnchorRegistry
 async function anchorBatchOnChain(
   batchId: string,
-  root: `0x${string}`,
+  root: string,
   leafCount: number,
   versionIds: string[]
 ) {
@@ -159,25 +159,19 @@ async function anchorBatchOnChain(
   const batchIdBytes32 = (
     batchId.replace(/-/g, '').padEnd(64, '0').slice(0, 64)
   );
-  const formattedBatchId = `0x${batchIdBytes32}` as `0x${string}`;
+  const formattedBatchId = `0x${batchIdBytes32}`;
 
   let txHash: string | undefined;
-  let blockNumber: bigint | undefined;
+  let blockNumber: number | bigint | undefined;
 
-  if (config.anchorAddress && walletClient && adminAccount) {
+  const anchor = getAnchorContract(adminSigner);
+  if (config.anchorAddress && anchor && adminSigner) {
     try {
       console.log(`[Anchor] Submitting anchorBatch to ${config.anchorAddress}...`);
-      txHash = await walletClient.writeContract({
-        address: config.anchorAddress,
-        abi: DocumentAnchorRegistryAbi,
-        functionName: 'anchorBatch',
-        args: [formattedBatchId, root, BigInt(leafCount)],
-      });
-
+      const tx = await anchor.anchorBatch(formattedBatchId, root, BigInt(leafCount));
+      txHash = tx.hash;
       console.log(`[Anchor] Tx submitted: ${txHash}, awaiting receipt...`);
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: txHash as `0x${string}`,
-      });
+      const receipt = await tx.wait();
       blockNumber = receipt.blockNumber;
       console.log(`[Anchor] Tx confirmed in block ${blockNumber}!`);
     } catch (err: any) {

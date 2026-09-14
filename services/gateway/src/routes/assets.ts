@@ -1,10 +1,9 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { formatDidPkh, hashDid } from '@sih26125/common';
-import { EnterpriseAssetNFTAbi } from '@sih26125/contracts';
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { putObject, getObject } from '../minio.js';
-import { publicClient, walletClient, adminAccount } from '../chain.js';
+import { getNftContract, adminSigner, provider } from '../chain.js';
 
 export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/assets - list assets from DB cache / chain
@@ -20,44 +19,40 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       let chainData: any = null;
       if (config.nftAddress) {
         try {
-          const rec = await publicClient.readContract({
-            address: config.nftAddress,
-            abi: EnterpriseAssetNFTAbi,
-            functionName: 'getAsset',
-            args: [BigInt(row.token_id)],
-          });
-          const owner = await publicClient.readContract({
-            address: config.nftAddress,
-            abi: EnterpriseAssetNFTAbi,
-            functionName: 'ownerOf',
-            args: [BigInt(row.token_id)],
-          });
-          chainData = {
-            owner,
-            didHash: rec.didHash,
-            assetClass: rec.assetClass,
-            status: rec.status === 1 ? 'Active' : rec.status === 2 ? 'Transferred' : 'Retired',
-            metadataURI: rec.metadataURI,
-            mintedAt: Number(rec.mintedAt),
-          };
-        } catch {
-          // fallback if contract read fails
+          const nft = getNftContract(provider);
+          if (nft) {
+            const rec = await nft.getAsset(BigInt(row.token_id));
+            const owner = await nft.ownerOf(BigInt(row.token_id));
+            chainData = {
+              owner,
+              didHash: rec.didHash,
+              assetClass: rec.assetClass,
+              status: Number(rec.status) === 1 ? 'Active' : Number(rec.status) === 2 ? 'Transferred' : 'Retired',
+              metadataURI: rec.metadataURI,
+            };
+          }
+        } catch (e) {
+          // ignore chain read errors for local cache items
         }
       }
 
       assets.push({
         tokenId: row.token_id,
+        minioKey: row.minio_key,
+        mimeType: row.mime_type,
+        createdAt: row.created_at,
         thumbnailUrl: `/api/assets/${row.token_id}/thumbnail`,
-        ...chainData,
+        chain: chainData,
       });
     }
 
     return { assets };
   });
 
-  // GET /api/assets/:tokenId/thumbnail - Serve thumbnail image from MinIO
+  // GET /api/assets/:tokenId/thumbnail - Stream thumbnail from MinIO
   fastify.get<{ Params: { tokenId: string } }>('/:tokenId/thumbnail', async (req, reply) => {
     const { tokenId } = req.params;
+
     const res = await query(
       `SELECT minio_key, mime_type FROM asset_thumbnails WHERE token_id = $1`,
       [tokenId]
@@ -68,14 +63,14 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
     }
 
     const { minio_key, mime_type } = res.rows[0];
+
     try {
       const stream = await getObject(config.minio.buckets.assetThumbnails, minio_key);
-      reply.header('Content-Type', mime_type || 'image/jpeg');
-      reply.header('Cache-Control', 'public, max-age=86400');
+      reply.header('Content-Type', mime_type || 'image/png');
       return reply.send(stream);
     } catch (err: any) {
       req.log.error(err);
-      return reply.status(500).send({ error: 'Failed to retrieve thumbnail' });
+      return reply.status(500).send({ error: 'Failed to retrieve thumbnail from MinIO' });
     }
   });
 
@@ -86,51 +81,44 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
     let chainData: any = null;
     if (config.nftAddress) {
       try {
-        const rec = await publicClient.readContract({
-          address: config.nftAddress,
-          abi: EnterpriseAssetNFTAbi,
-          functionName: 'getAsset',
-          args: [BigInt(tokenId)],
-        });
-        const owner = await publicClient.readContract({
-          address: config.nftAddress,
-          abi: EnterpriseAssetNFTAbi,
-          functionName: 'ownerOf',
-          args: [BigInt(tokenId)],
-        });
-        chainData = {
-          tokenId,
-          owner,
-          didHash: rec.didHash,
-          assetClass: rec.assetClass,
-          status: rec.status === 1 ? 'Active' : rec.status === 2 ? 'Transferred' : 'Retired',
-          metadataURI: rec.metadataURI,
-          mintedAt: Number(rec.mintedAt),
-        };
+        const nft = getNftContract(provider);
+        if (nft) {
+          const rec = await nft.getAsset(BigInt(tokenId));
+          const owner = await nft.ownerOf(BigInt(tokenId));
+          chainData = {
+            tokenId,
+            owner,
+            didHash: rec.didHash,
+            assetClass: rec.assetClass,
+            status: Number(rec.status) === 1 ? 'Active' : Number(rec.status) === 2 ? 'Transferred' : 'Retired',
+            metadataURI: rec.metadataURI,
+            mintedAt: Number(rec.mintedAt),
+          };
+        }
       } catch (err) {
-        req.log.warn({ err }, 'Contract read failed for getAsset');
+        req.log.warn(`Token #${tokenId} not found on-chain: ${err}`);
       }
     }
 
-    const thumbRes = await query(
-      `SELECT minio_key, mime_type FROM asset_thumbnails WHERE token_id = $1`,
+    const res = await query(
+      `SELECT minio_key, mime_type, created_at FROM asset_thumbnails WHERE token_id = $1`,
       [tokenId]
     );
 
     return {
       tokenId,
-      thumbnailUrl: thumbRes.rows.length > 0 ? `/api/assets/${tokenId}/thumbnail` : null,
-      ...chainData,
+      thumbnailUrl: res.rows.length > 0 ? `/api/assets/${tokenId}/thumbnail` : null,
+      chain: chainData,
     };
   });
 
-  // POST /api/assets/mint - Admin mints NFT with thumbnail
+  // POST /api/assets/mint - Multipart form with thumbnail image + metadata
   fastify.post('/mint', async (req, reply) => {
-    let toAddress = '';
-    let assetClass = '';
-    let metadataURI = '';
+    let toAddress: string | undefined;
+    let assetClass: string | undefined;
+    let metadataURI: string = '';
     let thumbnailBuffer: Buffer | null = null;
-    let thumbnailMime = 'image/jpeg';
+    let thumbnailMime: string = 'image/png';
 
     if (req.isMultipart()) {
       const parts = req.parts();
@@ -161,27 +149,21 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
     let tokenId: string | null = null;
     let txHash: string | null = null;
 
-    if (config.nftAddress && walletClient && adminAccount) {
+    const nft = getNftContract(adminSigner);
+    if (config.nftAddress && nft && adminSigner) {
       try {
-        txHash = await walletClient.writeContract({
-          address: config.nftAddress,
-          abi: EnterpriseAssetNFTAbi,
-          functionName: 'mint',
-          args: [toAddress as `0x${string}`, didHash, assetClass, metadataURI],
-        });
+        const tx = await nft.mint(toAddress, didHash, assetClass, metadataURI);
+        txHash = tx.hash;
+        const receipt = await tx.wait();
 
-        // Wait for receipt to extract tokenId from event
-        const receipt = await publicClient.waitForTransactionReceipt({
-          hash: txHash as `0x${string}`,
-        });
-
-        // Transfer event topic or AssetMinted
         for (const log of receipt.logs) {
-          if (log.topics[0] && log.topics[3]) {
-            // Transfer(address,address,uint256)
-            tokenId = BigInt(log.topics[3]).toString();
-            break;
-          }
+          try {
+            const parsed = nft.interface.parseLog(log);
+            if (parsed && (parsed.name === 'AssetMinted' || parsed.name === 'Transfer')) {
+              tokenId = (parsed.args.tokenId ?? parsed.args[2]).toString();
+              break;
+            }
+          } catch {}
         }
       } catch (err: any) {
         req.log.error(err);
@@ -189,7 +171,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       }
     }
 
-    // If local demo or contract not yet deployed, generate fallback monotonic or random ID
+    // Fallback ID if off-chain or indexing
     if (!tokenId) {
       const countRes = await query(`SELECT COUNT(*) FROM asset_thumbnails`);
       tokenId = (parseInt(countRes.rows[0].count, 10) + 1).toString();
@@ -235,19 +217,15 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
     const toDid = formatDidPkh(config.chainId, to);
     const toDidHash = hashDid(toDid);
 
-    if (!config.nftAddress || !walletClient || !adminAccount) {
+    const nft = getNftContract(adminSigner);
+    if (!config.nftAddress || !nft || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.nftAddress,
-        abi: EnterpriseAssetNFTAbi,
-        functionName: 'allocateInitial',
-        args: [BigInt(tokenId), to as `0x${string}`, toDidHash],
-      });
-
-      return { success: true, tokenId, to, txHash };
+      const tx = await nft.allocateInitial(BigInt(tokenId), to, toDidHash);
+      await tx.wait();
+      return { success: true, tokenId, to, txHash: tx.hash };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Allocation failed: ' + err.message });
@@ -264,19 +242,15 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
     const toDid = formatDidPkh(config.chainId, to);
     const toDidHash = hashDid(toDid);
 
-    if (!config.nftAddress || !walletClient || !adminAccount) {
+    const nft = getNftContract(adminSigner);
+    if (!config.nftAddress || !nft || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.nftAddress,
-        abi: EnterpriseAssetNFTAbi,
-        functionName: 'authorizeTransfer',
-        args: [BigInt(tokenId), from as `0x${string}`, to as `0x${string}`, toDidHash],
-      });
-
-      return { success: true, tokenId, from, to, txHash };
+      const tx = await nft.authorizeTransfer(BigInt(tokenId), from, to, toDidHash);
+      await tx.wait();
+      return { success: true, tokenId, from, to, txHash: tx.hash };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Transfer failed: ' + err.message });
@@ -290,19 +264,15 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       return reply.status(400).send({ error: 'Missing tokenId or reason' });
     }
 
-    if (!config.nftAddress || !walletClient || !adminAccount) {
+    const nft = getNftContract(adminSigner);
+    if (!config.nftAddress || !nft || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.nftAddress,
-        abi: EnterpriseAssetNFTAbi,
-        functionName: 'retireAsset',
-        args: [BigInt(tokenId), reason],
-      });
-
-      return { success: true, tokenId, reason, txHash };
+      const tx = await nft.retireAsset(BigInt(tokenId), reason);
+      await tx.wait();
+      return { success: true, tokenId, reason, txHash: tx.hash };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Retirement failed: ' + err.message });

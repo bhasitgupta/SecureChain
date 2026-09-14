@@ -1,44 +1,42 @@
-import { keccak256, encodePacked, stringToHex } from 'viem';
+import { ethers } from 'ethers';
 
-export function hashLeaf(documentId: string, versionId: string, sha256Hex: string): `0x${string}` {
-  const docHash = keccak256(stringToHex(documentId));
-  const verHash = keccak256(stringToHex(versionId));
-  const cleanSha = (sha256Hex.startsWith('0x') ? sha256Hex : `0x${sha256Hex}`) as `0x${string}`;
-  return keccak256(
-    encodePacked(
-      ['bytes32', 'bytes32', 'bytes32'],
-      [docHash, verHash, cleanSha]
-    )
+export function hashLeaf(documentId: string, versionId: string, sha256Hex: string): string {
+  const docHash = ethers.id(documentId);
+  const verHash = ethers.id(versionId);
+  const cleanSha = sha256Hex.startsWith('0x') ? sha256Hex : `0x${sha256Hex}`;
+  return ethers.solidityPackedKeccak256(
+    ['bytes32', 'bytes32', 'bytes32'],
+    [docHash, verHash, cleanSha]
   );
 }
 
-function hashPair(a: `0x${string}`, b: `0x${string}`): `0x${string}` {
+function hashPair(a: string, b: string): string {
   // Sort pairs strictly matching Solidity: hash < p ? keccak256(hash, p) : keccak256(p, hash)
   const aBig = BigInt(a);
   const bBig = BigInt(b);
   return aBig < bBig
-    ? keccak256(encodePacked(['bytes32', 'bytes32'], [a, b]))
-    : keccak256(encodePacked(['bytes32', 'bytes32'], [b, a]));
+    ? ethers.solidityPackedKeccak256(['bytes32', 'bytes32'], [a, b])
+    : ethers.solidityPackedKeccak256(['bytes32', 'bytes32'], [b, a]);
 }
 
 export interface MerkleTree {
-  root: `0x${string}`;
-  leaves: `0x${string}`[];
-  getProof(leafIndex: number): `0x${string}`[];
+  root: string;
+  leaves: string[];
+  getProof(leafIndex: number): string[];
 }
 
-export function buildMerkleTree(leaves: `0x${string}`[]): MerkleTree {
+export function buildMerkleTree(leaves: string[]): MerkleTree {
   if (leaves.length === 0) {
     throw new Error('Cannot build tree with zero leaves');
   }
 
   // Work with a copy
   const leafNodes = [...leaves];
-  const layers: `0x${string}`[][] = [leafNodes];
+  const layers: string[][] = [leafNodes];
 
   while (layers[layers.length - 1].length > 1) {
     const currentLayer = layers[layers.length - 1];
-    const nextLayer: `0x${string}`[] = [];
+    const nextLayer: string[] = [];
 
     for (let i = 0; i < currentLayer.length; i += 2) {
       if (i + 1 < currentLayer.length) {
@@ -56,11 +54,11 @@ export function buildMerkleTree(leaves: `0x${string}`[]): MerkleTree {
   return {
     root,
     leaves: leafNodes,
-    getProof(leafIndex: number): `0x${string}`[] {
+    getProof(leafIndex: number): string[] {
       if (leafIndex < 0 || leafIndex >= leafNodes.length) {
         throw new Error(`Leaf index ${leafIndex} out of bounds`);
       }
-      const proof: `0x${string}`[] = [];
+      const proof: string[] = [];
       let index = leafIndex;
 
       for (let l = 0; l < layers.length - 1; l++) {
@@ -82,7 +80,7 @@ export function buildMerkleTree(leaves: `0x${string}`[]): MerkleTree {
   };
 }
 
-export function verifyProof(leaf: `0x${string}`, proof: `0x${string}`[], root: `0x${string}`): boolean {
+export function verifyProof(leaf: string, proof: string[], root: string): boolean {
   let hash = leaf;
   for (const p of proof) {
     hash = hashPair(hash, p);

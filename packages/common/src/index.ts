@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { keccak256, toHex, stringToHex, encodePacked } from 'viem';
+import { ethers } from 'ethers';
 
 // ─── Error Codes ─────────────────────────────────────────────────────────────
 export const ErrorCodes = {
@@ -38,10 +38,10 @@ export type DocumentState = typeof DocumentStates[keyof typeof DocumentStates];
 
 // ─── RBAC Roles & Permissions ────────────────────────────────────────────────
 export const Roles = {
-  ADMIN: keccak256(stringToHex('ADMIN_ROLE')),
-  MANAGER: keccak256(stringToHex('MANAGER_ROLE')),
-  AUDITOR: keccak256(stringToHex('AUDITOR_ROLE')),
-  USER: keccak256(stringToHex('USER_ROLE')),
+  ADMIN: ethers.id('ADMIN_ROLE'),
+  MANAGER: ethers.id('MANAGER_ROLE'),
+  AUDITOR: ethers.id('AUDITOR_ROLE'),
+  USER: ethers.id('USER_ROLE'),
 } as const;
 
 export const Permissions = {
@@ -57,8 +57,8 @@ export function formatDidPkh(chainId: number, address: string): string {
   return `did:pkh:eip155:${chainId}:${address.toLowerCase()}`;
 }
 
-export function hashDid(did: string): `0x${string}` {
-  return keccak256(stringToHex(did));
+export function hashDid(did: string): string {
+  return ethers.id(did);
 }
 
 // ─── Verification Status ─────────────────────────────────────────────────────

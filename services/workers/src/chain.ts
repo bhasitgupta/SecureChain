@@ -1,31 +1,14 @@
-import { createPublicClient, createWalletClient, http, defineChain } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { ethers } from 'ethers';
 import { config } from './config.js';
+import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
 
-export const polygonAmoy = defineChain({
-  id: config.chainId,
-  name: 'Polygon Amoy',
-  nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-  rpcUrls: {
-    default: { http: [config.polygonRpcUrl] },
-    public: { http: [config.polygonRpcUrl] },
-  },
-  testnet: true,
-});
+export const provider = new ethers.JsonRpcProvider(
+  config.polygonRpcUrl || 'https://polygon-amoy.drpc.org'
+);
 
-export const publicClient = createPublicClient({
-  chain: polygonAmoy,
-  transport: http(config.polygonRpcUrl),
-});
-
-export const adminAccount = config.adminPrivateKey
-  ? privateKeyToAccount(config.adminPrivateKey)
+export const adminSigner = config.adminPrivateKey
+  ? new ethers.Wallet(config.adminPrivateKey, provider)
   : null;
 
-export const walletClient = adminAccount
-  ? createWalletClient({
-      account: adminAccount,
-      chain: polygonAmoy,
-      transport: http(config.polygonRpcUrl),
-    })
-  : null;
+export const getAnchorContract = (runner: ethers.ContractRunner | null = adminSigner || provider) =>
+  config.anchorAddress && runner ? new ethers.Contract(config.anchorAddress, DocumentAnchorRegistryAbi, runner) : null;

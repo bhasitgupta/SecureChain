@@ -14,26 +14,12 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.amoyChain = void 0;
-exports.getPublicClient = getPublicClient;
+exports.DEFAULT_AMOY_RPC = exports.AMOY_CHAIN_ID = void 0;
+exports.getProvider = getProvider;
 __exportStar(require("./abis.js"), exports);
-const viem_1 = require("viem");
-exports.amoyChain = (0, viem_1.defineChain)({
-    id: 80002,
-    name: 'Polygon Amoy',
-    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-    rpcUrls: {
-        default: { http: ['https://rpc-amoy.polygon.technology'] },
-        public: { http: ['https://rpc-amoy.polygon.technology'] },
-    },
-    blockExplorers: {
-        default: { name: 'PolygonScan', url: 'https://amoy.polygonscan.com' },
-    },
-    testnet: true,
-});
-function getPublicClient(rpcUrl) {
-    return (0, viem_1.createPublicClient)({
-        chain: exports.amoyChain,
-        transport: (0, viem_1.http)(rpcUrl || process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology'),
-    });
+const ethers_1 = require("ethers");
+exports.AMOY_CHAIN_ID = 80002;
+exports.DEFAULT_AMOY_RPC = 'https://polygon-amoy.drpc.org';
+function getProvider(rpcUrl) {
+    return new ethers_1.ethers.JsonRpcProvider(rpcUrl || process.env.POLYGON_RPC_URL || exports.DEFAULT_AMOY_RPC);
 }

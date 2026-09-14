@@ -1,14 +1,14 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { RecoveryManagerAbi } from '@sih26125/contracts';
 import { config } from '../config.js';
-import { publicClient, walletClient, adminAccount } from '../chain.js';
+import { getRecoveryContract, adminSigner, provider } from '../chain.js';
 
 export const recoveryRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/recovery/:address - Read recovery state
   fastify.get<{ Params: { address: string } }>('/:address', async (req, reply) => {
     const { address } = req.params;
 
-    if (!config.recoveryAddress) {
+    const rec = getRecoveryContract(provider);
+    if (!config.recoveryAddress || !rec) {
       return {
         address: address.toLowerCase(),
         owner: address.toLowerCase(),
@@ -20,12 +20,7 @@ export const recoveryRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
     }
 
     try {
-      const state = await publicClient.readContract({
-        address: config.recoveryAddress,
-        abi: RecoveryManagerAbi,
-        functionName: 'accounts',
-        args: [address as `0x${string}`],
-      });
+      const state = await rec.accounts(address);
 
       const now = Math.floor(Date.now() / 1000);
       const unlockTime = Number(state[2]);
@@ -53,19 +48,15 @@ export const recoveryRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
   fastify.post<{ Body: { timelockSeconds: number } }>('/register', async (req, reply) => {
     const { timelockSeconds = 300 } = req.body || {};
 
-    if (!config.recoveryAddress || !walletClient || !adminAccount) {
+    const rec = getRecoveryContract(adminSigner);
+    if (!config.recoveryAddress || !rec || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.recoveryAddress,
-        abi: RecoveryManagerAbi,
-        functionName: 'registerAccount',
-        args: [BigInt(timelockSeconds)],
-      });
-
-      return { success: true, txHash, timelockSeconds };
+      const tx = await rec.registerAccount(BigInt(timelockSeconds));
+      await tx.wait();
+      return { success: true, txHash: tx.hash, timelockSeconds };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Register account failed: ' + err.message });
@@ -88,25 +79,21 @@ export const recoveryRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
       return reply.status(400).send({ error: 'Missing required recovery parameters' });
     }
 
-    if (!config.recoveryAddress || !walletClient || !adminAccount) {
+    const rec = getRecoveryContract(adminSigner);
+    if (!config.recoveryAddress || !rec || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.recoveryAddress,
-        abi: RecoveryManagerAbi,
-        functionName: 'requestRecovery',
-        args: [
-          account as `0x${string}`,
-          proposedOwner as `0x${string}`,
-          nonce as `0x${string}`,
-          BigInt(deadline),
-          signature as `0x${string}`,
-        ],
-      });
-
-      return { success: true, txHash, account, proposedOwner };
+      const tx = await rec.requestRecovery(
+        account,
+        proposedOwner,
+        nonce,
+        BigInt(deadline),
+        signature
+      );
+      await tx.wait();
+      return { success: true, txHash: tx.hash, account, proposedOwner };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Request recovery failed: ' + err.message });
@@ -120,19 +107,15 @@ export const recoveryRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
       return reply.status(400).send({ error: 'Missing account' });
     }
 
-    if (!config.recoveryAddress || !walletClient || !adminAccount) {
+    const rec = getRecoveryContract(adminSigner);
+    if (!config.recoveryAddress || !rec || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.recoveryAddress,
-        abi: RecoveryManagerAbi,
-        functionName: 'cancelRecovery',
-        args: [account as `0x${string}`],
-      });
-
-      return { success: true, txHash, account };
+      const tx = await rec.cancelRecovery(account);
+      await tx.wait();
+      return { success: true, txHash: tx.hash, account };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Cancel recovery failed: ' + err.message });
@@ -146,19 +129,15 @@ export const recoveryRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
       return reply.status(400).send({ error: 'Missing account' });
     }
 
-    if (!config.recoveryAddress || !walletClient || !adminAccount) {
+    const rec = getRecoveryContract(adminSigner);
+    if (!config.recoveryAddress || !rec || !adminSigner) {
       return reply.status(503).send({ error: 'Chain or wallet not configured' });
     }
 
     try {
-      const txHash = await walletClient.writeContract({
-        address: config.recoveryAddress,
-        abi: RecoveryManagerAbi,
-        functionName: 'finalizeRecovery',
-        args: [account as `0x${string}`],
-      });
-
-      return { success: true, txHash, account };
+      const tx = await rec.finalizeRecovery(account);
+      await tx.wait();
+      return { success: true, txHash: tx.hash, account };
     } catch (err: any) {
       req.log.error(err);
       return reply.status(400).send({ error: 'Finalize recovery failed: ' + err.message });

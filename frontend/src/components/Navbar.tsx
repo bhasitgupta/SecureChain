@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { useWallet } from '@/context/WalletContext';
 import { Shield, FileCheck, Users, Box, Key, History, Activity } from 'lucide-react';
 
 const navItems = [
@@ -18,9 +18,8 @@ const navItems = [
 
 export function Navbar() {
   const pathname = usePathname();
-  const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { address, isConnected, connect, disconnect } = useWallet();
+
 
   return (
     <header className="border-b border-border bg-card/60 backdrop-blur-md sticky top-0 z-50">
@@ -71,7 +70,7 @@ export function Navbar() {
             </div>
           ) : (
             <button
-              onClick={() => connect({ connector: connectors[0] })}
+              onClick={() => connect()}
               className="text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-1.5 rounded-lg shadow"
             >
               Connect Wallet

@@ -7,7 +7,6 @@ const bullmq_1 = require("bullmq");
 const ioredis_1 = require("ioredis");
 const sharp_1 = __importDefault(require("sharp"));
 const merkle_1 = require("@sih26125/merkle");
-const contracts_1 = require("@sih26125/contracts");
 const config_js_1 = require("./config.js");
 const db_js_1 = require("./db.js");
 const minio_js_1 = require("./minio.js");
@@ -106,19 +105,14 @@ async function anchorBatchOnChain(batchId, root, leafCount, versionIds) {
     const formattedBatchId = `0x${batchIdBytes32}`;
     let txHash;
     let blockNumber;
-    if (config_js_1.config.anchorAddress && chain_js_1.walletClient && chain_js_1.adminAccount) {
+    const anchor = (0, chain_js_1.getAnchorContract)(chain_js_1.adminSigner);
+    if (config_js_1.config.anchorAddress && anchor && chain_js_1.adminSigner) {
         try {
             console.log(`[Anchor] Submitting anchorBatch to ${config_js_1.config.anchorAddress}...`);
-            txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.anchorAddress,
-                abi: contracts_1.DocumentAnchorRegistryAbi,
-                functionName: 'anchorBatch',
-                args: [formattedBatchId, root, BigInt(leafCount)],
-            });
+            const tx = await anchor.anchorBatch(formattedBatchId, root, BigInt(leafCount));
+            txHash = tx.hash;
             console.log(`[Anchor] Tx submitted: ${txHash}, awaiting receipt...`);
-            const receipt = await chain_js_1.publicClient.waitForTransactionReceipt({
-                hash: txHash,
-            });
+            const receipt = await tx.wait();
             blockNumber = receipt.blockNumber;
             console.log(`[Anchor] Tx confirmed in block ${blockNumber}!`);
         }

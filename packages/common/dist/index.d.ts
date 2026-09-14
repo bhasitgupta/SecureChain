@@ -29,10 +29,10 @@ export declare const DocumentStates: {
 };
 export type DocumentState = typeof DocumentStates[keyof typeof DocumentStates];
 export declare const Roles: {
-    readonly ADMIN: `0x${string}`;
-    readonly MANAGER: `0x${string}`;
-    readonly AUDITOR: `0x${string}`;
-    readonly USER: `0x${string}`;
+    readonly ADMIN: string;
+    readonly MANAGER: string;
+    readonly AUDITOR: string;
+    readonly USER: string;
 };
 export declare const Permissions: {
     readonly MINT: bigint;
@@ -42,7 +42,7 @@ export declare const Permissions: {
     readonly AUDIT: bigint;
 };
 export declare function formatDidPkh(chainId: number, address: string): string;
-export declare function hashDid(did: string): `0x${string}`;
+export declare function hashDid(did: string): string;
 export interface VerificationResult {
     valid: boolean;
     documentId: string;

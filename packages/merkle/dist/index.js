@@ -3,20 +3,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.hashLeaf = hashLeaf;
 exports.buildMerkleTree = buildMerkleTree;
 exports.verifyProof = verifyProof;
-const viem_1 = require("viem");
+const ethers_1 = require("ethers");
 function hashLeaf(documentId, versionId, sha256Hex) {
-    const docHash = (0, viem_1.keccak256)((0, viem_1.stringToHex)(documentId));
-    const verHash = (0, viem_1.keccak256)((0, viem_1.stringToHex)(versionId));
-    const cleanSha = (sha256Hex.startsWith('0x') ? sha256Hex : `0x${sha256Hex}`);
-    return (0, viem_1.keccak256)((0, viem_1.encodePacked)(['bytes32', 'bytes32', 'bytes32'], [docHash, verHash, cleanSha]));
+    const docHash = ethers_1.ethers.id(documentId);
+    const verHash = ethers_1.ethers.id(versionId);
+    const cleanSha = sha256Hex.startsWith('0x') ? sha256Hex : `0x${sha256Hex}`;
+    return ethers_1.ethers.solidityPackedKeccak256(['bytes32', 'bytes32', 'bytes32'], [docHash, verHash, cleanSha]);
 }
 function hashPair(a, b) {
     // Sort pairs strictly matching Solidity: hash < p ? keccak256(hash, p) : keccak256(p, hash)
     const aBig = BigInt(a);
     const bBig = BigInt(b);
     return aBig < bBig
-        ? (0, viem_1.keccak256)((0, viem_1.encodePacked)(['bytes32', 'bytes32'], [a, b]))
-        : (0, viem_1.keccak256)((0, viem_1.encodePacked)(['bytes32', 'bytes32'], [b, a]));
+        ? ethers_1.ethers.solidityPackedKeccak256(['bytes32', 'bytes32'], [a, b])
+        : ethers_1.ethers.solidityPackedKeccak256(['bytes32', 'bytes32'], [b, a]);
 }
 function buildMerkleTree(leaves) {
     if (leaves.length === 0) {

@@ -1,14 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.recoveryRoutes = void 0;
-const contracts_1 = require("@sih26125/contracts");
 const config_js_1 = require("../config.js");
 const chain_js_1 = require("../chain.js");
 const recoveryRoutes = async (fastify) => {
     // GET /api/recovery/:address - Read recovery state
     fastify.get('/:address', async (req, reply) => {
         const { address } = req.params;
-        if (!config_js_1.config.recoveryAddress) {
+        const rec = (0, chain_js_1.getRecoveryContract)(chain_js_1.provider);
+        if (!config_js_1.config.recoveryAddress || !rec) {
             return {
                 address: address.toLowerCase(),
                 owner: address.toLowerCase(),
@@ -19,12 +19,7 @@ const recoveryRoutes = async (fastify) => {
             };
         }
         try {
-            const state = await chain_js_1.publicClient.readContract({
-                address: config_js_1.config.recoveryAddress,
-                abi: contracts_1.RecoveryManagerAbi,
-                functionName: 'accounts',
-                args: [address],
-            });
+            const state = await rec.accounts(address);
             const now = Math.floor(Date.now() / 1000);
             const unlockTime = Number(state[2]);
             let status = 'READY';
@@ -48,17 +43,14 @@ const recoveryRoutes = async (fastify) => {
     // POST /api/recovery/register - Register account with timelock
     fastify.post('/register', async (req, reply) => {
         const { timelockSeconds = 300 } = req.body || {};
-        if (!config_js_1.config.recoveryAddress || !chain_js_1.walletClient || !chain_js_1.adminAccount) {
+        const rec = (0, chain_js_1.getRecoveryContract)(chain_js_1.adminSigner);
+        if (!config_js_1.config.recoveryAddress || !rec || !chain_js_1.adminSigner) {
             return reply.status(503).send({ error: 'Chain or wallet not configured' });
         }
         try {
-            const txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.recoveryAddress,
-                abi: contracts_1.RecoveryManagerAbi,
-                functionName: 'registerAccount',
-                args: [BigInt(timelockSeconds)],
-            });
-            return { success: true, txHash, timelockSeconds };
+            const tx = await rec.registerAccount(BigInt(timelockSeconds));
+            await tx.wait();
+            return { success: true, txHash: tx.hash, timelockSeconds };
         }
         catch (err) {
             req.log.error(err);
@@ -71,23 +63,14 @@ const recoveryRoutes = async (fastify) => {
         if (!account || !proposedOwner || !nonce || !deadline || !signature) {
             return reply.status(400).send({ error: 'Missing required recovery parameters' });
         }
-        if (!config_js_1.config.recoveryAddress || !chain_js_1.walletClient || !chain_js_1.adminAccount) {
+        const rec = (0, chain_js_1.getRecoveryContract)(chain_js_1.adminSigner);
+        if (!config_js_1.config.recoveryAddress || !rec || !chain_js_1.adminSigner) {
             return reply.status(503).send({ error: 'Chain or wallet not configured' });
         }
         try {
-            const txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.recoveryAddress,
-                abi: contracts_1.RecoveryManagerAbi,
-                functionName: 'requestRecovery',
-                args: [
-                    account,
-                    proposedOwner,
-                    nonce,
-                    BigInt(deadline),
-                    signature,
-                ],
-            });
-            return { success: true, txHash, account, proposedOwner };
+            const tx = await rec.requestRecovery(account, proposedOwner, nonce, BigInt(deadline), signature);
+            await tx.wait();
+            return { success: true, txHash: tx.hash, account, proposedOwner };
         }
         catch (err) {
             req.log.error(err);
@@ -100,17 +83,14 @@ const recoveryRoutes = async (fastify) => {
         if (!account) {
             return reply.status(400).send({ error: 'Missing account' });
         }
-        if (!config_js_1.config.recoveryAddress || !chain_js_1.walletClient || !chain_js_1.adminAccount) {
+        const rec = (0, chain_js_1.getRecoveryContract)(chain_js_1.adminSigner);
+        if (!config_js_1.config.recoveryAddress || !rec || !chain_js_1.adminSigner) {
             return reply.status(503).send({ error: 'Chain or wallet not configured' });
         }
         try {
-            const txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.recoveryAddress,
-                abi: contracts_1.RecoveryManagerAbi,
-                functionName: 'cancelRecovery',
-                args: [account],
-            });
-            return { success: true, txHash, account };
+            const tx = await rec.cancelRecovery(account);
+            await tx.wait();
+            return { success: true, txHash: tx.hash, account };
         }
         catch (err) {
             req.log.error(err);
@@ -123,17 +103,14 @@ const recoveryRoutes = async (fastify) => {
         if (!account) {
             return reply.status(400).send({ error: 'Missing account' });
         }
-        if (!config_js_1.config.recoveryAddress || !chain_js_1.walletClient || !chain_js_1.adminAccount) {
+        const rec = (0, chain_js_1.getRecoveryContract)(chain_js_1.adminSigner);
+        if (!config_js_1.config.recoveryAddress || !rec || !chain_js_1.adminSigner) {
             return reply.status(503).send({ error: 'Chain or wallet not configured' });
         }
         try {
-            const txHash = await chain_js_1.walletClient.writeContract({
-                address: config_js_1.config.recoveryAddress,
-                abi: contracts_1.RecoveryManagerAbi,
-                functionName: 'finalizeRecovery',
-                args: [account],
-            });
-            return { success: true, txHash, account };
+            const tx = await rec.finalizeRecovery(account);
+            await tx.wait();
+            return { success: true, txHash: tx.hash, account };
         }
         catch (err) {
             req.log.error(err);

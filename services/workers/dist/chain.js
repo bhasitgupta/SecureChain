@@ -1,30 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.walletClient = exports.adminAccount = exports.publicClient = exports.polygonAmoy = void 0;
-const viem_1 = require("viem");
-const accounts_1 = require("viem/accounts");
+exports.getAnchorContract = exports.adminSigner = exports.provider = void 0;
+const ethers_1 = require("ethers");
 const config_js_1 = require("./config.js");
-exports.polygonAmoy = (0, viem_1.defineChain)({
-    id: config_js_1.config.chainId,
-    name: 'Polygon Amoy',
-    nativeCurrency: { name: 'MATIC', symbol: 'MATIC', decimals: 18 },
-    rpcUrls: {
-        default: { http: [config_js_1.config.polygonRpcUrl] },
-        public: { http: [config_js_1.config.polygonRpcUrl] },
-    },
-    testnet: true,
-});
-exports.publicClient = (0, viem_1.createPublicClient)({
-    chain: exports.polygonAmoy,
-    transport: (0, viem_1.http)(config_js_1.config.polygonRpcUrl),
-});
-exports.adminAccount = config_js_1.config.adminPrivateKey
-    ? (0, accounts_1.privateKeyToAccount)(config_js_1.config.adminPrivateKey)
+const contracts_1 = require("@sih26125/contracts");
+exports.provider = new ethers_1.ethers.JsonRpcProvider(config_js_1.config.polygonRpcUrl || 'https://polygon-amoy.drpc.org');
+exports.adminSigner = config_js_1.config.adminPrivateKey
+    ? new ethers_1.ethers.Wallet(config_js_1.config.adminPrivateKey, exports.provider)
     : null;
-exports.walletClient = exports.adminAccount
-    ? (0, viem_1.createWalletClient)({
-        account: exports.adminAccount,
-        chain: exports.polygonAmoy,
-        transport: (0, viem_1.http)(config_js_1.config.polygonRpcUrl),
-    })
-    : null;
+const getAnchorContract = (runner = exports.adminSigner || exports.provider) => config_js_1.config.anchorAddress && runner ? new ethers_1.ethers.Contract(config_js_1.config.anchorAddress, contracts_1.DocumentAnchorRegistryAbi, runner) : null;
+exports.getAnchorContract = getAnchorContract;

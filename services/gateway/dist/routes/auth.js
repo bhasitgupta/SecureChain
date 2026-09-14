@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authRoutes = void 0;
-const viem_1 = require("viem");
+const ethers_1 = require("ethers");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const crypto_1 = require("crypto");
 const config_js_1 = require("../config.js");
@@ -30,12 +30,8 @@ const authRoutes = async (fastify) => {
             return reply.status(400).send({ error: 'Missing message, signature, or address' });
         }
         try {
-            const isValid = await (0, viem_1.verifyMessage)({
-                address: address,
-                message,
-                signature: signature,
-            });
-            if (!isValid) {
+            const recovered = ethers_1.ethers.verifyMessage(message, signature);
+            if (recovered.toLowerCase() !== address.toLowerCase()) {
                 return reply.status(401).send({ error: 'Signature verification failed' });
             }
             const did = (0, common_1.formatDidPkh)(config_js_1.config.chainId, address);
