@@ -1,67 +1,113 @@
-// Role Registry: Manages wallet-to-role mappings with persistent storage and on-chain sync
+// Role Registry: Manages wallet-to-role mappings with persistent storage and on-chain Polygon Amoy sync
+import { ethers } from 'ethers';
+import { CONTRACT_ADDRESSES, NETWORK } from './constants';
+
 const ROLE_REGISTRY_KEY = 'sc_wallet_roles';
 const ROLE_REQUESTS_KEY = 'sc_role_requests';
 
+// Role keccak256 hashes matching IdentityAndAccessManager.sol
+export const ROLE_HASHES = {
+  ADMIN:   '0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775',
+  MANAGER: '0x241ecf16d79d0f8dbfb92cbc07fe17840425976cf0667f022fe9877caa831b08',
+  AUDITOR: '0x59a1c48e5837ad7a7f3dcedcbe129bf3249ec4fbf651fd4f5e2600ead39fe2f5',
+  USER:    '0x14823911f2da1b49f045a0929a60b8c1f2a7fc8c06c7284ca3e8ab4e193a08c8',
+};
+
 // Initial Authoritative Admin Addresses (Specified by Governance)
-const DEFAULT_ROLES = {
+export const DEFAULT_ROLES = {
   '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
   '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
 };
 
-// Deprecated old test addresses to purge automatically
-const PURGE_OLD_ADDRESSES = [
-  '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-  '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
-  '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc',
-  '0x90f79bf6eb2c4f870365e785982e1f101e93b906',
-];
-
 const DEFAULT_REQUESTS = [];
 
-function cleanRegistry(registry) {
-  let modified = false;
-  PURGE_OLD_ADDRESSES.forEach(addr => {
-    if (registry[addr]) {
-      delete registry[addr];
-      modified = true;
-    }
-  });
-  // Ensure authoritative admins are present
-  Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
-    if (!registry[addr]) {
-      registry[addr] = role;
-      modified = true;
-    }
-  });
-  return { registry, modified };
-}
-
+/**
+ * Returns role for a wallet address from local registry or defaults
+ */
 export function getRoleForWallet(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase();
 
   try {
     const roles = getAllWalletRoles();
-    return roles[normalized] || 'USER';
+    if (roles[normalized]) return roles[normalized];
+    return DEFAULT_ROLES[normalized] || 'USER';
   } catch (e) {
     return DEFAULT_ROLES[normalized] || 'USER';
   }
 }
 
+/**
+ * Query on-chain IAM contract on Polygon Amoy for authoritative role
+ */
+export async function checkOnChainRole(address) {
+  if (!address) return 'USER';
+  const normalized = address.toLowerCase();
+  const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+  if (!iamAddr || !iamAddr.startsWith('0x') || iamAddr === '—') {
+    return getRoleForWallet(normalized);
+  }
+
+  try {
+    const rpc = NETWORK.rpcUrl || 'https://rpc-amoy.polygon.technology';
+    const provider = new ethers.JsonRpcProvider(rpc);
+    const abi = ['function hasRole(bytes32 role, address acct) view returns (bool)'];
+    const iam = new ethers.Contract(iamAddr, abi, provider);
+
+    const [isAdmin, isAuditor, isManager] = await Promise.all([
+      iam.hasRole(ROLE_HASHES.ADMIN, normalized).catch(() => false),
+      iam.hasRole(ROLE_HASHES.AUDITOR, normalized).catch(() => false),
+      iam.hasRole(ROLE_HASHES.MANAGER, normalized).catch(() => false),
+    ]);
+
+    if (isAdmin) return 'ADMIN';
+    if (isAuditor) return 'AUDITOR';
+    if (isManager) return 'MANAGER';
+    return getRoleForWallet(normalized);
+  } catch (err) {
+    // Fallback to secondary RPC if primary fails
+    try {
+      if (NETWORK.fallbackRpcUrl) {
+        const fallbackProvider = new ethers.JsonRpcProvider(NETWORK.fallbackRpcUrl);
+        const abi = ['function hasRole(bytes32 role, address acct) view returns (bool)'];
+        const iam = new ethers.Contract(iamAddr, abi, fallbackProvider);
+        const isAuditor = await iam.hasRole(ROLE_HASHES.AUDITOR, normalized);
+        if (isAuditor) return 'AUDITOR';
+        const isAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, normalized);
+        if (isAdmin) return 'ADMIN';
+        const isManager = await iam.hasRole(ROLE_HASHES.MANAGER, normalized);
+        if (isManager) return 'MANAGER';
+      }
+    } catch (e) {}
+
+    return getRoleForWallet(normalized);
+  }
+}
+
+/**
+ * Fetch all configured wallet roles
+ */
 export function getAllWalletRoles() {
   try {
-    const stored = localStorage.getItem(ROLE_REGISTRY_KEY);
-    let registry = stored ? JSON.parse(stored) : { ...DEFAULT_ROLES };
-    const { registry: cleaned, modified } = cleanRegistry(registry);
-    if (modified || !stored) {
-      localStorage.setItem(ROLE_REGISTRY_KEY, JSON.stringify(cleaned));
-    }
-    return cleaned;
+    const stored = localStorage.getItem(ROLE_REGISTRY_KEY) || sessionStorage.getItem(ROLE_REGISTRY_KEY);
+    let registry = stored ? JSON.parse(stored) : {};
+    
+    // Ensure default governance admins are present
+    Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
+      if (!registry[addr]) {
+        registry[addr] = role;
+      }
+    });
+
+    return registry;
   } catch (e) {
     return { ...DEFAULT_ROLES };
   }
 }
 
+/**
+ * Assign a role to a wallet address and persist across storage
+ */
 export function setWalletRole(address, role) {
   if (!address) return;
   const normalized = address.toLowerCase();
@@ -72,21 +118,35 @@ export function setWalletRole(address, role) {
     } else {
       roles[normalized] = role;
     }
-    localStorage.setItem(ROLE_REGISTRY_KEY, JSON.stringify(roles));
+
+    const payload = JSON.stringify(roles);
+    localStorage.setItem(ROLE_REGISTRY_KEY, payload);
+    sessionStorage.setItem(ROLE_REGISTRY_KEY, payload);
+
+    // Broadcast across windows, tabs, and current app context
     window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { address: normalized, role } }));
+    window.dispatchEvent(new Event('storage'));
   } catch (e) {
     console.error('Failed to save wallet role', e);
   }
 }
 
+/**
+ * Remove an assigned role (downgrade to USER)
+ */
 export function removeWalletRole(address) {
   if (!address) return;
   const normalized = address.toLowerCase();
   try {
     const roles = getAllWalletRoles();
     delete roles[normalized];
-    localStorage.setItem(ROLE_REGISTRY_KEY, JSON.stringify(roles));
+
+    const payload = JSON.stringify(roles);
+    localStorage.setItem(ROLE_REGISTRY_KEY, payload);
+    sessionStorage.setItem(ROLE_REGISTRY_KEY, payload);
+
     window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { address: normalized, role: 'USER' } }));
+    window.dispatchEvent(new Event('storage'));
   } catch (e) {
     console.error('Failed to remove wallet role', e);
   }

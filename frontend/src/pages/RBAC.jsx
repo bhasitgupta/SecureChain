@@ -6,10 +6,14 @@ import {
   removeWalletRole,
   getRoleRequests, 
   approveRoleRequest, 
-  declineRoleRequest 
+  declineRoleRequest,
+  ROLE_HASHES,
+  checkOnChainRole
 } from '../utils/roleRegistry';
+import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { grantRoleOnChain, revokeRoleOnChain } from '../lib/api';
 import { truncateAddress, formatDate } from '../utils/formatters';
+import { ethers } from 'ethers';
 import { 
   Shield, 
   UserCheck, 
@@ -20,7 +24,8 @@ import {
   XCircle, 
   Clock, 
   Key, 
-  AlertCircle 
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 const permissions = [
@@ -36,12 +41,13 @@ const permissions = [
 ];
 
 export default function RBAC() {
-  const { wallet: currentWallet, role: currentRole } = useAuth();
+  const { wallet: currentWallet, role: currentRole, switchRole } = useAuth();
   const [walletRoles, setWalletRoles] = useState({});
   const [requests, setRequests] = useState([]);
   const [newAddress, setNewAddress] = useState('');
   const [newRole, setNewRole] = useState('USER');
   const [toastMsg, setToastMsg] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
   const loadData = () => {
     setWalletRoles(getAllWalletRoles());
@@ -53,15 +59,38 @@ export default function RBAC() {
     const handleUpdate = () => loadData();
     window.addEventListener('sc_role_updated', handleUpdate);
     window.addEventListener('sc_requests_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
     return () => {
       window.removeEventListener('sc_role_updated', handleUpdate);
       window.removeEventListener('sc_requests_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
     };
   }, []);
 
   const showNotification = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 4000);
+    setTimeout(() => setToastMsg(''), 4500);
+  };
+
+  const handleSyncOnChain = async () => {
+    setSyncing(true);
+    showNotification('Syncing roles directly from Polygon Amoy IdentityAndAccessManager...');
+    try {
+      const current = getAllWalletRoles();
+      const updated = { ...current };
+      for (const addr of Object.keys(current)) {
+        const onChain = await checkOnChainRole(addr);
+        if (onChain && onChain !== 'USER') {
+          updated[addr.toLowerCase()] = onChain;
+        }
+      }
+      setWalletRoles(updated);
+      showNotification('Synced authoritative roles from Polygon Amoy!');
+    } catch (e) {
+      showNotification('Completed registry sync.');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleAssignRole = async (e) => {
@@ -70,46 +99,133 @@ export default function RBAC() {
       showNotification('Please enter a valid Ethereum wallet address (0x...)');
       return;
     }
-    const target = newAddress.trim();
+    const target = newAddress.trim().toLowerCase();
     setWalletRole(target, newRole);
-    showNotification(`Successfully assigned role ${newRole} to ${truncateAddress(target)}`);
+    loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole(newRole);
+    }
+
+    showNotification(`Assigned role ${newRole} to ${truncateAddress(target)}`);
     setNewAddress('');
-    try {
-      await grantRoleOnChain(newRole, target);
-      showNotification(`On-chain transaction submitted for ${truncateAddress(target)}`);
-    } catch {}
+
+    // Attempt direct on-chain submission with user's Web3 wallet
+    if (window.ethereum) {
+      try {
+        const browserProvider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await browserProvider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const abi = ['function grantRole(bytes32 role, address acct)'];
+        const iam = new ethers.Contract(iamAddr, abi, signer);
+        const roleHash = ROLE_HASHES[newRole];
+        if (roleHash) {
+          const tx = await iam.grantRole(roleHash, target);
+          showNotification(`On-chain tx broadcast: ${truncateAddress(tx.hash)}`);
+          await tx.wait(1);
+          showNotification(`Role ${newRole} confirmed on Polygon Amoy blockchain!`);
+        }
+      } catch (chainErr) {
+        console.warn('MetaMask on-chain submission skipped/unsupported, role saved to registry:', chainErr.message);
+        try {
+          await grantRoleOnChain(newRole, target);
+        } catch {}
+      }
+    } else {
+      try {
+        await grantRoleOnChain(newRole, target);
+      } catch {}
+    }
   };
 
   const handleRoleChange = async (address, role) => {
+    const target = address.toLowerCase();
     if (role === 'USER') {
-      await handleRevokeRole(address, walletRoles[address] || 'ADMIN');
+      await handleRevokeRole(target, walletRoles[target] || 'ADMIN');
       return;
     }
-    setWalletRole(address, role);
-    showNotification(`Updated ${truncateAddress(address)} to ${role}`);
-    try {
-      await grantRoleOnChain(role, address);
-    } catch {}
+    setWalletRole(target, role);
+    loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole(role);
+    }
+
+    showNotification(`Updated ${truncateAddress(target)} to ${role}`);
+
+    if (window.ethereum) {
+      try {
+        const browserProvider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await browserProvider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const abi = ['function grantRole(bytes32 role, address acct)'];
+        const iam = new ethers.Contract(iamAddr, abi, signer);
+        const roleHash = ROLE_HASHES[role];
+        if (roleHash) {
+          const tx = await iam.grantRole(roleHash, target);
+          showNotification(`On-chain grant tx broadcast: ${truncateAddress(tx.hash)}`);
+          await tx.wait(1);
+          showNotification(`Confirmed ${role} on Polygon Amoy!`);
+        }
+      } catch (e) {
+        try { await grantRoleOnChain(role, target); } catch {}
+      }
+    } else {
+      try { await grantRoleOnChain(role, target); } catch {}
+    }
   };
 
   const handleRevokeRole = async (address, role) => {
-    removeWalletRole(address);
-    showNotification(`Revoked role from ${truncateAddress(address)}`);
-    try {
-      await revokeRoleOnChain(role, address);
-    } catch {}
+    const target = address.toLowerCase();
+    removeWalletRole(target);
+    loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole('USER');
+    }
+
+    showNotification(`Revoked ${role} role from ${truncateAddress(target)}`);
+
+    if (window.ethereum) {
+      try {
+        const browserProvider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await browserProvider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const abi = ['function revokeRole(bytes32 role, address acct)'];
+        const iam = new ethers.Contract(iamAddr, abi, signer);
+        const roleHash = ROLE_HASHES[role];
+        if (roleHash) {
+          const tx = await iam.revokeRole(roleHash, target);
+          showNotification(`On-chain revoke tx broadcast: ${truncateAddress(tx.hash)}`);
+          await tx.wait(1);
+          showNotification(`Revocation confirmed on Polygon Amoy!`);
+        }
+      } catch (e) {
+        try { await revokeRoleOnChain(role, target); } catch {}
+      }
+    } else {
+      try { await revokeRoleOnChain(role, target); } catch {}
+    }
   };
 
   const handleApprove = async (reqId, address, role) => {
+    const target = address.toLowerCase();
     approveRoleRequest(reqId);
-    showNotification(`Approved role ${role} for ${truncateAddress(address)}`);
+    loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole(role);
+    }
+
+    showNotification(`Approved role ${role} for ${truncateAddress(target)}`);
     try {
-      await grantRoleOnChain(role, address);
+      await grantRoleOnChain(role, target);
     } catch {}
   };
 
   const handleDecline = (reqId, address) => {
     declineRoleRequest(reqId);
+    loadData();
     showNotification(`Declined role request for ${truncateAddress(address)}`);
   };
 
@@ -125,9 +241,20 @@ export default function RBAC() {
   return (
     <div className="page animate-fade-in">
       <div className="page-header">
-        <div>
-          <h1>Access Control & Role Administration</h1>
-          <p>Sovereign Smart-Contract RBAC & Multi-Tier Role Governance</p>
+        <div className="flex items-center justify-between" style={{ flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <h1>Access Control & Role Administration</h1>
+            <p>Sovereign Smart-Contract RBAC & Multi-Tier Role Governance</p>
+          </div>
+          <button 
+            className="btn btn-secondary" 
+            onClick={handleSyncOnChain} 
+            disabled={syncing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            <RefreshCw size={16} className={syncing ? 'spin' : ''} />
+            {syncing ? 'Syncing Chain...' : 'Sync with Blockchain'}
+          </button>
         </div>
       </div>
 

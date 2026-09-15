@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { connectWallet, switchNetwork, onAccountsChanged, onChainChanged } from '../utils/walletUtils';
-import { getRoleForWallet } from '../utils/roleRegistry';
+import { getRoleForWallet, checkOnChainRole, setWalletRole } from '../utils/roleRegistry';
 
 const AuthContext = createContext(null);
 
@@ -33,8 +33,9 @@ function clearSession() {
 
 export function AuthProvider({ children }) {
   const initialSession = loadSession();
+  const initialRole = initialSession?.wallet ? getRoleForWallet(initialSession.wallet) : (initialSession?.role || 'USER');
   const [wallet, setWallet] = useState(initialSession?.wallet || null);
-  const [role, setRole] = useState(initialSession?.role || 'USER');
+  const [role, setRole] = useState(initialRole);
   const [isConnected, setIsConnected] = useState(!!initialSession?.isConnected);
   const [authMethod, setAuthMethod] = useState(initialSession?.authMethod || (initialSession ? 'wallet' : null));
   const [uid, setUid] = useState(initialSession?.uid || null);
@@ -44,17 +45,34 @@ export function AuthProvider({ children }) {
   // Restore or verify provider on mount
   useEffect(() => {
     const session = loadSession();
-    if (session) {
+    if (session && session.wallet) {
+      const resolvedRole = getRoleForWallet(session.wallet);
       setWallet(session.wallet);
-      setRole(session.role || getRoleForWallet(session.wallet));
+      setRole(resolvedRole);
       setAuthMethod(session.authMethod || 'wallet');
       setUid(session.uid || null);
       setIsConnected(true);
 
+      // Verify on-chain status asynchronously
+      checkOnChainRole(session.wallet).then(chainRole => {
+        if (chainRole && chainRole !== 'USER') {
+          setRole(chainRole);
+          setWalletRole(session.wallet, chainRole);
+          saveSession({ ...session, role: chainRole });
+        }
+      });
+
       if (session.authMethod === 'wallet' && window.ethereum) {
         window.ethereum.request({ method: 'eth_accounts' }).then(accounts => {
-          if (accounts.length > 0 && accounts[0].toLowerCase() === session.wallet?.toLowerCase()) {
+          if (accounts.length > 0) {
             setProvider(window.ethereum);
+            const activeAccount = accounts[0];
+            if (activeAccount.toLowerCase() !== session.wallet.toLowerCase()) {
+              const activeRole = getRoleForWallet(activeAccount);
+              setWallet(activeAccount);
+              setRole(activeRole);
+              saveSession({ ...session, wallet: activeAccount, role: activeRole });
+            }
           }
         }).catch(() => {});
       }
@@ -62,16 +80,38 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
-  // Listen for admin role updates dispatched in real time
+  // Listen for admin role updates dispatched in real time or across storage
   useEffect(() => {
+    const syncCurrentRole = () => {
+      if (wallet) {
+        const latestRole = getRoleForWallet(wallet);
+        setRole(latestRole);
+        const session = loadSession();
+        if (session) {
+          saveSession({ ...session, role: latestRole });
+        }
+      }
+    };
+
     const handleRoleUpdated = (e) => {
       const { address: updatedAddr, role: newRole } = e.detail || {};
       if (wallet && updatedAddr && wallet.toLowerCase() === updatedAddr.toLowerCase()) {
-        switchRole(newRole);
+        setRole(newRole);
+        const session = loadSession();
+        if (session) {
+          saveSession({ ...session, role: newRole });
+        }
+      } else {
+        syncCurrentRole();
       }
     };
+
     window.addEventListener('sc_role_updated', handleRoleUpdated);
-    return () => window.removeEventListener('sc_role_updated', handleRoleUpdated);
+    window.addEventListener('storage', syncCurrentRole);
+    return () => {
+      window.removeEventListener('sc_role_updated', handleRoleUpdated);
+      window.removeEventListener('storage', syncCurrentRole);
+    };
   }, [wallet]);
 
   // Listen for wallet account/chain changes
@@ -90,6 +130,15 @@ export function AuthProvider({ children }) {
         if (session) {
           saveSession({ ...session, wallet: newAddr, role: assignedRole });
         }
+
+        // Verify on-chain
+        checkOnChainRole(newAddr).then(chainRole => {
+          if (chainRole && chainRole !== 'USER') {
+            setRole(chainRole);
+            setWalletRole(newAddr, chainRole);
+            saveSession({ ...session, wallet: newAddr, role: chainRole });
+          }
+        });
       }
     });
 
@@ -112,7 +161,6 @@ export function AuthProvider({ children }) {
     await switchNetwork(result.provider);
 
     const address = result.address;
-    // New wallets default to 'USER'; only designated/admin-granted addresses get higher roles
     const assignedRole = getRoleForWallet(address);
 
     setWallet(address);
@@ -122,6 +170,15 @@ export function AuthProvider({ children }) {
     setIsConnected(true);
 
     saveSession({ wallet: address, role: assignedRole, authMethod: 'wallet', uid: null, isConnected: true });
+
+    // Check on-chain Polygon Amoy contract for authoritative role
+    checkOnChainRole(address).then(chainRole => {
+      if (chainRole && chainRole !== 'USER') {
+        setRole(chainRole);
+        setWalletRole(address, chainRole);
+        saveSession({ wallet: address, role: chainRole, authMethod: 'wallet', uid: null, isConnected: true });
+      }
+    });
 
     return { address, role: assignedRole };
   }, []);

@@ -32,16 +32,19 @@ export const IDENTITY_STATUS = { 0: 'Inactive', 1: 'Active', 2: 'Suspended', 3: 
 // ── Asset status enum (must match EnterpriseAssetNFT.sol) ──
 export const ASSET_STATUS = { 0: 'Uninitialized', 1: 'Active', 2: 'Transferred', 3: 'Retired' };
 
-// ── Contract addresses loaded from env (set via .env, never hardcoded) ──
+// ── Contract addresses loaded from env with real verified Polygon Amoy deployments as default ──
 export const CONTRACT_ADDRESSES = {
-  IdentityAndAccessManager: import.meta.env.VITE_CONTRACT_IAM || '—',
-  EnterpriseAssetNFT:       import.meta.env.VITE_CONTRACT_NFT || '—',
-  DocumentAnchorRegistry:   import.meta.env.VITE_CONTRACT_ANCHOR || '—',
-  RecoveryManager:          import.meta.env.VITE_CONTRACT_RECOVERY || '—',
+  IdentityAndAccessManager: import.meta.env.VITE_CONTRACT_IAM || '0x0Ca09ba889727bE9FbBAA53d2fE1541bF2f8cee6',
+  EnterpriseAssetNFT:       import.meta.env.VITE_CONTRACT_NFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D',
+  DocumentAnchorRegistry:   import.meta.env.VITE_CONTRACT_ANCHOR || '0x8921960116d0D4a8A26aad7eA330E3f098C7F58F',
+  RecoveryManager:          import.meta.env.VITE_CONTRACT_RECOVERY || '0xf3F590b6DFA67a8453c62C8E065cdb5127518b90',
 };
 
 export const NETWORK = {
-  name:    import.meta.env.VITE_NETWORK_NAME || '—',
-  chainId: import.meta.env.VITE_CHAIN_ID || '—',
-  rpcUrl:  import.meta.env.VITE_RPC_URL || '—',
+  name:          import.meta.env.VITE_NETWORK_NAME || 'Polygon Amoy Testnet',
+  chainId:       import.meta.env.VITE_CHAIN_ID || '80002',
+  rpcUrl:        import.meta.env.VITE_RPC_URL || 'https://rpc-amoy.polygon.technology',
+  fallbackRpcUrl:'https://polygon-amoy.drpc.org',
+  blockExplorer: import.meta.env.VITE_BLOCK_EXPLORER || 'https://amoy.polygonscan.com',
+  nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
 };
