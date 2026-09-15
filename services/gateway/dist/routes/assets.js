@@ -6,6 +6,7 @@ const config_js_1 = require("../config.js");
 const db_js_1 = require("../db.js");
 const minio_js_1 = require("../minio.js");
 const chain_js_1 = require("../chain.js");
+const auth_js_1 = require("../auth.js");
 const assetRoutes = async (fastify) => {
     // GET /api/assets - list assets from DB cache / chain
     fastify.get('/', async (_req, _reply) => {
@@ -96,7 +97,7 @@ const assetRoutes = async (fastify) => {
         };
     });
     // POST /api/assets/mint - Multipart form with thumbnail image + metadata
-    fastify.post('/mint', async (req, reply) => {
+    fastify.post('/mint', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN')] }, async (req, reply) => {
         let toAddress;
         let assetClass;
         let metadataURI = '';
@@ -125,6 +126,10 @@ const assetRoutes = async (fastify) => {
             assetClass = body?.assetClass;
             metadataURI = body?.metadataURI || '';
         }
+        // Default `to` to relayer address when blank ("retain in custody")
+        if (!toAddress || toAddress.trim() === '') {
+            toAddress = chain_js_1.adminSigner?.address;
+        }
         if (!toAddress || !assetClass) {
             return reply.status(400).send({ error: 'Missing required fields: to, assetClass' });
         }
@@ -133,39 +138,39 @@ const assetRoutes = async (fastify) => {
         let tokenId = null;
         let txHash = null;
         const nft = (0, chain_js_1.getNftContract)(chain_js_1.adminSigner);
-        if (config_js_1.config.nftAddress && nft && chain_js_1.adminSigner) {
-            try {
-                const tx = await nft.mint(toAddress, didHash, assetClass, metadataURI);
-                txHash = tx.hash;
-                const receipt = await tx.wait();
-                for (const log of receipt.logs) {
-                    try {
-                        const parsed = nft.interface.parseLog(log);
-                        if (parsed && (parsed.name === 'AssetMinted' || parsed.name === 'Transfer')) {
-                            tokenId = (parsed.args.tokenId ?? parsed.args[2]).toString();
-                            break;
-                        }
+        if (!config_js_1.config.nftAddress || !nft || !chain_js_1.adminSigner) {
+            return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+        }
+        try {
+            await nft.mint.staticCall(toAddress, didHash, assetClass, metadataURI);
+            const tx = await nft.mint(toAddress, didHash, assetClass, metadataURI);
+            txHash = tx.hash;
+            const receipt = await tx.wait();
+            for (const log of receipt.logs) {
+                try {
+                    const parsed = nft.interface.parseLog(log);
+                    if (parsed && (parsed.name === 'AssetMinted' || parsed.name === 'Transfer')) {
+                        tokenId = (parsed.args.tokenId ?? parsed.args[2]).toString();
+                        break;
                     }
-                    catch { }
                 }
-            }
-            catch (err) {
-                req.log.error(err);
-                return reply.status(400).send({ error: 'On-chain mint failed: ' + err.message });
+                catch { }
             }
         }
-        // Fallback ID if off-chain or indexing
+        catch (err) {
+            req.log.error(err);
+            return reply.status(400).send({ error: 'On-chain mint failed: ' + (err.reason || err.shortMessage || err.message) });
+        }
         if (!tokenId) {
-            const countRes = await (0, db_js_1.query)(`SELECT COUNT(*) FROM asset_thumbnails`);
-            tokenId = (parseInt(countRes.rows[0].count, 10) + 1).toString();
+            return reply.status(500).send({ error: 'Mint succeeded on-chain but failed to parse tokenId from receipt' });
         }
         // Save thumbnail in MinIO if provided
         if (thumbnailBuffer) {
             const minioKey = `${tokenId}_thumbnail`;
             await (0, minio_js_1.putObject)(config_js_1.config.minio.buckets.assetThumbnails, minioKey, thumbnailBuffer, thumbnailBuffer.length, { 'Content-Type': thumbnailMime });
             await (0, db_js_1.query)(`INSERT INTO asset_thumbnails (token_id, minio_key, mime_type, created_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (token_id) DO UPDATE SET minio_key = $2, mime_type = $3`, [tokenId, minioKey, thumbnailMime]);
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (token_id) DO UPDATE SET minio_key = $2, mime_type = $3`, [tokenId, minioKey, thumbnailMime]);
         }
         return {
             success: true,
@@ -178,7 +183,7 @@ const assetRoutes = async (fastify) => {
         };
     });
     // POST /api/assets/allocate - Admin initial allocation
-    fastify.post('/allocate', async (req, reply) => {
+    fastify.post('/allocate', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN')] }, async (req, reply) => {
         const { tokenId, to } = req.body;
         if (!tokenId || !to) {
             return reply.status(400).send({ error: 'Missing tokenId or to' });
@@ -190,17 +195,18 @@ const assetRoutes = async (fastify) => {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
+            await nft.allocateInitial.staticCall(BigInt(tokenId), to, toDidHash);
             const tx = await nft.allocateInitial(BigInt(tokenId), to, toDidHash);
             await tx.wait();
             return { success: true, tokenId, to, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);
-            return reply.status(400).send({ error: 'Allocation failed: ' + err.message });
+            return reply.status(400).send({ error: 'Allocation failed: ' + (err.reason || err.shortMessage || err.message) });
         }
     });
     // POST /api/assets/transfer - Policy transfer
-    fastify.post('/transfer', async (req, reply) => {
+    fastify.post('/transfer', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN', 'MANAGER')] }, async (req, reply) => {
         const { tokenId, from, to } = req.body;
         if (!tokenId || !from || !to) {
             return reply.status(400).send({ error: 'Missing tokenId, from, or to' });
@@ -212,17 +218,18 @@ const assetRoutes = async (fastify) => {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
+            await nft.authorizeTransfer.staticCall(BigInt(tokenId), from, to, toDidHash);
             const tx = await nft.authorizeTransfer(BigInt(tokenId), from, to, toDidHash);
             await tx.wait();
             return { success: true, tokenId, from, to, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);
-            return reply.status(400).send({ error: 'Transfer failed: ' + err.message });
+            return reply.status(400).send({ error: 'Transfer failed: ' + (err.reason || err.shortMessage || err.message) });
         }
     });
     // POST /api/assets/retire - Admin retires asset
-    fastify.post('/retire', async (req, reply) => {
+    fastify.post('/retire', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN')] }, async (req, reply) => {
         const { tokenId, reason } = req.body;
         if (!tokenId || !reason) {
             return reply.status(400).send({ error: 'Missing tokenId or reason' });
@@ -232,13 +239,14 @@ const assetRoutes = async (fastify) => {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
+            await nft.retireAsset.staticCall(BigInt(tokenId), reason);
             const tx = await nft.retireAsset(BigInt(tokenId), reason);
             await tx.wait();
             return { success: true, tokenId, reason, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);
-            return reply.status(400).send({ error: 'Retirement failed: ' + err.message });
+            return reply.status(400).send({ error: 'Retirement failed: ' + (err.reason || err.shortMessage || err.message) });
         }
     });
 };

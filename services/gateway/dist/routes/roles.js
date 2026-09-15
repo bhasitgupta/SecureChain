@@ -4,6 +4,7 @@ exports.rolesRoutes = void 0;
 const common_1 = require("@sih26125/common");
 const config_js_1 = require("../config.js");
 const chain_js_1 = require("../chain.js");
+const auth_js_1 = require("../auth.js");
 const rolesRoutes = async (fastify) => {
     // GET /api/roles/:address - check roles for address
     fastify.get('/:address', async (req, _reply) => {
@@ -35,7 +36,7 @@ const rolesRoutes = async (fastify) => {
         return { address: address.toLowerCase(), roles: roleMap };
     });
     // POST /api/roles/grant - Admin grants role
-    fastify.post('/grant', async (req, reply) => {
+    fastify.post('/grant', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN')] }, async (req, reply) => {
         const parsed = common_1.GrantRoleSchema.safeParse(req.body);
         if (!parsed.success) {
             return reply.status(400).send({ error: parsed.error.issues[0].message });
@@ -47,17 +48,18 @@ const rolesRoutes = async (fastify) => {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
+            await iam.grantRole.staticCall(roleHash, account);
             const tx = await iam.grantRole(roleHash, account);
             await tx.wait();
             return { success: true, role, account, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);
-            return reply.status(400).send({ error: 'Grant role failed: ' + err.message });
+            return reply.status(400).send({ error: 'Grant role failed: ' + (err.reason || err.shortMessage || err.message) });
         }
     });
     // POST /api/roles/revoke - Admin revokes role
-    fastify.post('/revoke', async (req, reply) => {
+    fastify.post('/revoke', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN')] }, async (req, reply) => {
         const parsed = common_1.GrantRoleSchema.safeParse(req.body);
         if (!parsed.success) {
             return reply.status(400).send({ error: parsed.error.issues[0].message });
@@ -69,13 +71,14 @@ const rolesRoutes = async (fastify) => {
             return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
         }
         try {
+            await iam.revokeRole.staticCall(roleHash, account);
             const tx = await iam.revokeRole(roleHash, account);
             await tx.wait();
             return { success: true, role, account, txHash: tx.hash };
         }
         catch (err) {
             req.log.error(err);
-            return reply.status(400).send({ error: 'Revoke role failed: ' + err.message });
+            return reply.status(400).send({ error: 'Revoke role failed: ' + (err.reason || err.shortMessage || err.message) });
         }
     });
 };

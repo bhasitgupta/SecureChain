@@ -36,10 +36,15 @@ const authRoutes = async (fastify) => {
             }
             const did = (0, common_1.formatDidPkh)(config_js_1.config.chainId, address);
             const didHash = (0, common_1.hashDid)(did);
-            // Upsert identity cache
-            await (0, db_js_1.query)(`INSERT INTO identities (did_hash, did, account, status, updated_at)
-         VALUES ($1, $2, $3, 'Active', NOW())
-         ON CONFLICT (did_hash) DO UPDATE SET updated_at = NOW()`, [didHash, did, address.toLowerCase()]);
+            // Upsert identity cache (non-blocking fallback)
+            try {
+                await (0, db_js_1.query)(`INSERT INTO identities (did_hash, did, account, status, updated_at)
+           VALUES ($1, $2, $3, 'Active', NOW())
+           ON CONFLICT (did_hash) DO UPDATE SET updated_at = NOW()`, [didHash, did, address.toLowerCase()]);
+            }
+            catch (dbErr) {
+                req.log.warn({ err: dbErr.message }, 'Could not cache identity to DB, continuing with on-chain auth');
+            }
             const token = jsonwebtoken_1.default.sign({ address: address.toLowerCase(), did, didHash }, config_js_1.config.jwtSecret, { expiresIn: '7d' });
             reply.setCookie('auth_token', token, {
                 path: '/',

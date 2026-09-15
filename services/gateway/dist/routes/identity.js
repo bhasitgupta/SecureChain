@@ -5,6 +5,7 @@ const common_1 = require("@sih26125/common");
 const config_js_1 = require("../config.js");
 const db_js_1 = require("../db.js");
 const chain_js_1 = require("../chain.js");
+const auth_js_1 = require("../auth.js");
 const identityRoutes = async (fastify) => {
     // GET /api/identity - list all cached identities
     fastify.get('/', async (_req, _reply) => {
@@ -57,7 +58,7 @@ const identityRoutes = async (fastify) => {
         return reply.status(404).send({ error: 'Identity not found' });
     });
     // POST /api/identity - Register identity
-    fastify.post('/', async (req, reply) => {
+    fastify.post('/', { preHandler: [(0, auth_js_1.requireOnChainRole)('ADMIN')] }, async (req, reply) => {
         const parsed = common_1.RegisterIdentitySchema.safeParse(req.body);
         if (!parsed.success) {
             return reply.status(400).send({ error: parsed.error.issues[0].message });
@@ -67,16 +68,18 @@ const identityRoutes = async (fastify) => {
         const didHash = (0, common_1.hashDid)(did);
         let txHash;
         const iam = (0, chain_js_1.getIamContract)(chain_js_1.adminSigner);
-        if (config_js_1.config.iamAddress && iam && chain_js_1.adminSigner) {
-            try {
-                const tx = await iam.registerIdentity(didHash, account, subjectId);
-                txHash = tx.hash;
-                await tx.wait();
-            }
-            catch (err) {
-                req.log.error(err);
-                return reply.status(400).send({ error: 'On-chain registration failed: ' + err.message });
-            }
+        if (!config_js_1.config.iamAddress || !iam || !chain_js_1.adminSigner) {
+            return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+        }
+        try {
+            await iam.registerIdentity.staticCall(didHash, account, subjectId);
+            const tx = await iam.registerIdentity(didHash, account, subjectId);
+            txHash = tx.hash;
+            await tx.wait();
+        }
+        catch (err) {
+            req.log.error(err);
+            return reply.status(400).send({ error: 'On-chain registration failed: ' + (err.reason || err.shortMessage || err.message) });
         }
         // Upsert in database
         await (0, db_js_1.query)(`INSERT INTO identities (did_hash, did, subject_id, account, status, created_at, updated_at)
