@@ -105,9 +105,9 @@ export default function Verification() {
                     : `Verification failed: ${errorMessage || 'Document altered or not anchored.'}`}
                 </div>
                 {details && (
-                  <div className="text-xs font-mono mt-2 opacity-80">
-                    {details.computedSha256 && <div>SHA-256: {details.computedSha256.slice(0, 24)}...</div>}
-                    {details.note && <div className="text-warning mt-1">{details.note}</div>}
+                  <div className="text-xs font-mono mt-2" style={{ marginTop: '8px' }}>
+                    {details.computedSha256 && <div style={{ fontWeight: 600 }}>SHA-256: {details.computedSha256.slice(0, 24)}...</div>}
+                    {details.note && <div style={{ marginTop: '4px', fontWeight: 500 }}>{details.note}</div>}
                   </div>
                 )}
               </div>

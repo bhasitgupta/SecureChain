@@ -52,6 +52,9 @@ export function AuthProvider({ children }) {
       setAuthMethod(session.authMethod || 'wallet');
       setUid(session.uid || null);
       setIsConnected(true);
+      if (session.role !== resolvedRole) {
+        saveSession({ ...session, role: resolvedRole });
+      }
 
       // Verify on-chain status asynchronously
       checkOnChainRole(session.wallet).then(chainRole => {

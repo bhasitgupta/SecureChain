@@ -121,72 +121,74 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-lg)', flexWrap: 'wrap', gap: 8 }}>
-          <h3>
-            <FileCode size={18} style={{ display: 'inline', marginRight: 8, verticalAlign: 'text-bottom' }} />
-            Authoritative Smart Contracts
-          </h3>
-          <span className="badge badge-success flex items-center gap-xs">
-            <ShieldCheck size={14} /> Polygon Amoy Enforced
-          </span>
-        </div>
+      {role !== 'USER' && (
+        <div className="card" style={{ marginTop: 'var(--space-lg)' }}>
+          <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-lg)', flexWrap: 'wrap', gap: 8 }}>
+            <h3>
+              <FileCode size={18} style={{ display: 'inline', marginRight: 8, verticalAlign: 'text-bottom' }} />
+              Authoritative Smart Contracts
+            </h3>
+            <span className="badge badge-success flex items-center gap-xs">
+              <ShieldCheck size={14} /> Polygon Amoy Enforced
+            </span>
+          </div>
 
-        <div className="table-container">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Contract Component</th>
-                <th>EVM Contract Address</th>
-                <th>Purpose / Module</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(CONTRACT_ADDRESSES).map(([name, addr]) => {
-                const meta = CONTRACT_METADATA[name] || { label: name, role: 'Smart Contract Engine' };
-                return (
-                  <tr key={name}>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{meta.label}</div>
-                      <div className="text-xs text-tertiary font-mono">{name}</div>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-xs">
-                        <span className="font-mono text-sm" style={{ fontWeight: 500 }}>
-                          {addr}
-                        </span>
-                        <button 
-                          className="btn btn-ghost btn-sm" 
-                          onClick={() => handleCopy(addr, name)}
-                          title="Copy contract address"
-                          style={{ padding: '4px 6px' }}
+          <div className="table-container">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Contract Component</th>
+                  <th>EVM Contract Address</th>
+                  <th>Purpose / Module</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(CONTRACT_ADDRESSES).map(([name, addr]) => {
+                  const meta = CONTRACT_METADATA[name] || { label: name, role: 'Smart Contract Engine' };
+                  return (
+                    <tr key={name}>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{meta.label}</div>
+                        <div className="text-xs text-tertiary font-mono">{name}</div>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-xs">
+                          <span className="font-mono text-sm" style={{ fontWeight: 500 }}>
+                            {addr}
+                          </span>
+                          <button 
+                            className="btn btn-ghost btn-sm" 
+                            onClick={() => handleCopy(addr, name)}
+                            title="Copy contract address"
+                            style={{ padding: '4px 6px' }}
+                          >
+                            {copiedKey === name ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                          </button>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="text-sm text-secondary">{meta.role}</span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <a 
+                          href={getExplorerUrl(addr)} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="btn btn-ghost btn-sm"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                         >
-                          {copiedKey === name ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="text-sm text-secondary">{meta.role}</span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <a 
-                        href={getExplorerUrl(addr)} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="btn btn-ghost btn-sm"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                      >
-                        <ExternalLink size={13} /> Explorer
-                      </a>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          <ExternalLink size={13} /> Explorer
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

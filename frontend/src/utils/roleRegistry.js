@@ -13,10 +13,11 @@ export const ROLE_HASHES = {
   USER:    '0x14823911f2da1b49f045a0929a60b8c1f2a7fc8c06c7284ca3e8ab4e193a08c8',
 };
 
-// Initial Authoritative Admin Addresses (Specified by Governance)
+// Initial Authoritative Admin & Privileged Role Addresses (Specified by Governance)
 export const DEFAULT_ROLES = {
   '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
   '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
+  '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a': 'AUDITOR',
 };
 
 const DEFAULT_REQUESTS = [];
@@ -26,14 +27,25 @@ const DEFAULT_REQUESTS = [];
  */
 export function getRoleForWallet(address) {
   if (!address) return 'USER';
-  const normalized = address.toLowerCase();
+  const normalized = address.toLowerCase().trim();
+
+  // If address has an explicit authoritative role configured in DEFAULT_ROLES, retrieve it
+  const defaultRole = DEFAULT_ROLES[normalized];
 
   try {
     const roles = getAllWalletRoles();
-    if (roles[normalized]) return roles[normalized];
-    return DEFAULT_ROLES[normalized] || 'USER';
+    const assigned = roles[normalized];
+    // If dynamically assigned a privileged role (ADMIN, MANAGER, AUDITOR), respect it
+    if (assigned && assigned !== 'USER') {
+      return assigned;
+    }
+    // If default role exists, it takes precedence over USER
+    if (defaultRole) {
+      return defaultRole;
+    }
+    return assigned || 'USER';
   } catch (e) {
-    return DEFAULT_ROLES[normalized] || 'USER';
+    return defaultRole || 'USER';
   }
 }
 
@@ -92,14 +104,23 @@ export function getAllWalletRoles() {
     const stored = localStorage.getItem(ROLE_REGISTRY_KEY) || sessionStorage.getItem(ROLE_REGISTRY_KEY);
     let registry = stored ? JSON.parse(stored) : {};
     
-    // Ensure default governance admins are present
-    Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
-      if (!registry[addr]) {
-        registry[addr] = role;
+    // Normalize all existing stored keys
+    const normalizedRegistry = {};
+    Object.entries(registry).forEach(([k, v]) => {
+      if (k && v) {
+        normalizedRegistry[k.toLowerCase().trim()] = v;
       }
     });
 
-    return registry;
+    // Ensure authoritative default roles are present and not overridden by stale USER
+    Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
+      const normAddr = addr.toLowerCase().trim();
+      if (!normalizedRegistry[normAddr] || normalizedRegistry[normAddr] === 'USER') {
+        normalizedRegistry[normAddr] = role;
+      }
+    });
+
+    return normalizedRegistry;
   } catch (e) {
     return { ...DEFAULT_ROLES };
   }
@@ -110,7 +131,7 @@ export function getAllWalletRoles() {
  */
 export function setWalletRole(address, role) {
   if (!address) return;
-  const normalized = address.toLowerCase();
+  const normalized = address.toLowerCase().trim();
   try {
     const roles = getAllWalletRoles();
     if (role === 'USER') {
@@ -136,7 +157,7 @@ export function setWalletRole(address, role) {
  */
 export function removeWalletRole(address) {
   if (!address) return;
-  const normalized = address.toLowerCase();
+  const normalized = address.toLowerCase().trim();
   try {
     const roles = getAllWalletRoles();
     delete roles[normalized];

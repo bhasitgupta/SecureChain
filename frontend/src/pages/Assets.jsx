@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { mockAssets } from '../utils/mockData';
 import { formatDate, getStatusColor } from '../utils/formatters';
 import { fetchAssets, mintAsset } from '../lib/api';
@@ -7,6 +8,9 @@ import EmptyState from '../components/EmptyState';
 import './Assets.css';
 
 export default function Assets() {
+  const { role } = useAuth();
+  const canMint = role === 'ADMIN';
+
   const [assets, setAssets] = useState(mockAssets);
   const [search, setSearch] = useState('');
   const [showMint, setShowMint] = useState(false);
@@ -44,6 +48,10 @@ export default function Assets() {
   }, []);
 
   const handleMint = async () => {
+    if (!canMint) {
+      setMintError('Unauthorized: Only administrators have minting privileges.');
+      return;
+    }
     if (!description) {
       setMintError('Asset description is required');
       return;
@@ -88,9 +96,11 @@ export default function Assets() {
             <h1>Digital Assets</h1>
             <p>ERC-721 enterprise asset registry on Polygon Amoy</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowMint(true)}>
-            <Plus size={16} /> Mint Asset
-          </button>
+          {canMint && (
+            <button className="btn btn-primary" onClick={() => setShowMint(true)}>
+              <Plus size={16} /> Mint Asset
+            </button>
+          )}
         </div>
       </div>
 
@@ -108,7 +118,11 @@ export default function Assets() {
 
       {filtered.length === 0 ? (
         <div className="card">
-          <EmptyState icon={Gem} message="No digital assets" description="Mint your first NFT asset to begin tracking." />
+          <EmptyState 
+            icon={Gem} 
+            message="No digital assets" 
+            description={canMint ? "Mint your first NFT asset to begin tracking." : "No digital assets allocated to your account."} 
+          />
         </div>
       ) : (
         <div className="grid-3">
@@ -149,7 +163,7 @@ export default function Assets() {
         </div>
       )}
 
-      {showMint && (
+      {showMint && canMint && (
         <div className="modal-overlay" onClick={() => setShowMint(false)}>
           <div className="modal-content card animate-fade-scale" onClick={e => e.stopPropagation()}>
             <h3 style={{ marginBottom: 'var(--space-lg)' }}>Mint New Asset (Admin Role Required)</h3>

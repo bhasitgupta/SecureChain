@@ -2,36 +2,77 @@
 
 .verify-result {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-md);
-  padding: var(--space-md);
-  border-radius: var(--radius-md);
+  padding: 18px 24px;
+  border-radius: var(--radius-lg);
   margin-top: var(--space-lg);
   animation: fadeInScale 0.3s ease-out;
 }
 
 .verify-result-valid {
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: var(--status-success);
+  background: #ECFDF5 !important;
+  border: 2px solid #059669 !important;
+  color: #064E3B !important;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.22) !important;
+}
+
+.verify-result-valid svg {
+  color: #059669 !important;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.verify-result-valid .verify-result-title {
+  color: #047857 !important;
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.verify-result-valid .verify-result-desc {
+  color: #064E3B !important;
+  font-size: 0.925rem;
+  opacity: 1 !important;
+  font-weight: 600;
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+.verify-result-valid .font-mono {
+  color: #047857 !important;
+  font-weight: 700;
 }
 
 .verify-result-invalid {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: var(--status-error);
+  background: #FEF2F2 !important;
+  border: 2px solid #DC2626 !important;
+  color: #7F1D1D !important;
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.2) !important;
 }
 
-.verify-result-title {
-  font-size: 1.2rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.verify-result-desc {
-  font-size: 0.8rem;
-  opacity: 0.8;
+.verify-result-invalid svg {
+  color: #DC2626 !important;
+  flex-shrink: 0;
   margin-top: 2px;
+}
+
+.verify-result-invalid .verify-result-title {
+  color: #991B1B !important;
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.verify-result-invalid .verify-result-desc {
+  color: #7F1D1D !important;
+  font-size: 0.925rem;
+  opacity: 1 !important;
+  font-weight: 600;
+  margin-top: 3px;
+  line-height: 1.5;
 }
 
 .verify-pipeline {
