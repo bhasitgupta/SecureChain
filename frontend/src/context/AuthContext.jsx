@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const session = loadSession();
     if (session && session.wallet) {
-      const resolvedRole = session.role || getRoleForWallet(session.wallet);
+      const resolvedRole = getRoleForWallet(session.wallet);
       setWallet(session.wallet);
       setRole(resolvedRole);
       setAuthMethod(session.authMethod || 'wallet');
@@ -68,7 +68,7 @@ export function AuthProvider({ children }) {
       fetchRolesForAddress(session.wallet)
         .then((data) => {
           const derived = deriveRoleFromRoleMap(data.roles);
-          if (derived) {
+          if (derived && derived !== 'USER') {
             setRole(derived);
             setWalletRole(session.wallet, derived);
             saveSession({ ...session, role: derived });
@@ -164,9 +164,10 @@ export function AuthProvider({ children }) {
         fetchRolesForAddress(newAddr)
           .then((data) => {
             const derived = deriveRoleFromRoleMap(data.roles);
-            setRole(derived);
+            const effectiveRole = (derived && derived !== 'USER') ? derived : getRoleForWallet(newAddr);
+            setRole(effectiveRole);
             const session = loadSession();
-            if (session) saveSession({ ...session, wallet: newAddr, role: derived });
+            if (session) saveSession({ ...session, wallet: newAddr, role: effectiveRole });
           })
           .catch(() => {
             const assignedRole = getRoleForWallet(newAddr);
@@ -208,13 +209,18 @@ export function AuthProvider({ children }) {
     }
 
     // Authoritative on-chain role from gateway API or contract
-    let authoritativeRole = 'USER';
+    let authoritativeRole = getRoleForWallet(address);
     try {
       const roleData = await fetchRolesForAddress(address);
-      authoritativeRole = deriveRoleFromRoleMap(roleData.roles);
+      const derived = deriveRoleFromRoleMap(roleData.roles);
+      if (derived && derived !== 'USER') {
+        authoritativeRole = derived;
+      }
     } catch {
       const onChain = await checkOnChainRole(address);
-      authoritativeRole = (onChain && onChain !== 'USER') ? onChain : getRoleForWallet(address);
+      if (onChain && onChain !== 'USER') {
+        authoritativeRole = onChain;
+      }
     }
 
     setWallet(address);
