@@ -2,40 +2,63 @@
 const ROLE_REGISTRY_KEY = 'sc_wallet_roles';
 const ROLE_REQUESTS_KEY = 'sc_role_requests';
 
-// Default initial roles (sample addresses for testing + demo)
+// Initial Authoritative Admin Addresses (Specified by Governance)
 const DEFAULT_ROLES = {
-  // Configured initial admin addresses
-  '0x70997970c51812dc3a010c7d01b50e0d17dc79c8': 'ADMIN',
-  '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266': 'ADMIN',
+  '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
+  '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
 };
 
-// Initial sample role requests for admin review
-const DEFAULT_REQUESTS = [
-  { id: 'req-1', address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC', requestedRole: 'MANAGER', reason: 'Land Registry Officer - North Zone', timestamp: Date.now() - 3600000, status: 'PENDING' },
-  { id: 'req-2', address: '0x90F79bf6EB2c4f870365E785982E1f101E93b906', requestedRole: 'AUDITOR', reason: 'CAG State Comptroller Audit Lead', timestamp: Date.now() - 7200000, status: 'PENDING' },
+// Deprecated old test addresses to purge automatically
+const PURGE_OLD_ADDRESSES = [
+  '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+  '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266',
+  '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc',
+  '0x90f79bf6eb2c4f870365e785982e1f101e93b906',
 ];
+
+const DEFAULT_REQUESTS = [];
+
+function cleanRegistry(registry) {
+  let modified = false;
+  PURGE_OLD_ADDRESSES.forEach(addr => {
+    if (registry[addr]) {
+      delete registry[addr];
+      modified = true;
+    }
+  });
+  // Ensure authoritative admins are present
+  Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
+    if (!registry[addr]) {
+      registry[addr] = role;
+      modified = true;
+    }
+  });
+  return { registry, modified };
+}
 
 export function getRoleForWallet(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase();
 
   try {
-    const stored = localStorage.getItem(ROLE_REGISTRY_KEY);
-    const registry = stored ? JSON.parse(stored) : DEFAULT_ROLES;
-
-    // Return assigned role or default to USER for all new wallets
-    return registry[normalized] || 'USER';
+    const roles = getAllWalletRoles();
+    return roles[normalized] || 'USER';
   } catch (e) {
-    return 'USER';
+    return DEFAULT_ROLES[normalized] || 'USER';
   }
 }
 
 export function getAllWalletRoles() {
   try {
     const stored = localStorage.getItem(ROLE_REGISTRY_KEY);
-    return stored ? JSON.parse(stored) : DEFAULT_ROLES;
+    let registry = stored ? JSON.parse(stored) : { ...DEFAULT_ROLES };
+    const { registry: cleaned, modified } = cleanRegistry(registry);
+    if (modified || !stored) {
+      localStorage.setItem(ROLE_REGISTRY_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch (e) {
-    return DEFAULT_ROLES;
+    return { ...DEFAULT_ROLES };
   }
 }
 
@@ -44,11 +67,28 @@ export function setWalletRole(address, role) {
   const normalized = address.toLowerCase();
   try {
     const roles = getAllWalletRoles();
-    roles[normalized] = role;
+    if (role === 'USER') {
+      delete roles[normalized];
+    } else {
+      roles[normalized] = role;
+    }
     localStorage.setItem(ROLE_REGISTRY_KEY, JSON.stringify(roles));
     window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { address: normalized, role } }));
   } catch (e) {
     console.error('Failed to save wallet role', e);
+  }
+}
+
+export function removeWalletRole(address) {
+  if (!address) return;
+  const normalized = address.toLowerCase();
+  try {
+    const roles = getAllWalletRoles();
+    delete roles[normalized];
+    localStorage.setItem(ROLE_REGISTRY_KEY, JSON.stringify(roles));
+    window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { address: normalized, role: 'USER' } }));
+  } catch (e) {
+    console.error('Failed to remove wallet role', e);
   }
 }
 
@@ -75,10 +115,7 @@ export function approveRoleRequest(requestId) {
   const req = requests.find(r => r.id === requestId);
   if (!req) return;
 
-  // Grant the role to the wallet
   setWalletRole(req.address, req.requestedRole);
-
-  // Mark request as approved
   req.status = 'APPROVED';
   saveRoleRequests(requests);
 }

@@ -45,15 +45,13 @@ const INITIAL_NOTIFICATIONS = [
 ];
 
 export default function TopBar() {
-  const { wallet, role, isConnected, disconnect, switchRole, authMethod, uid } = useAuth();
+  const { wallet, role, isConnected, disconnect, authMethod, uid } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const location = useLocation();
 
   const notifRef = useRef(null);
-  const roleRef = useRef(null);
   const walletRef = useRef(null);
 
   const unreadCount = notifications.filter(n => n.unread).length;
@@ -64,9 +62,6 @@ export default function TopBar() {
     function handleClickOutside(e) {
       if (notifRef.current && !notifRef.current.contains(e.target)) {
         setShowNotifications(false);
-      }
-      if (roleRef.current && !roleRef.current.contains(e.target)) {
-        setShowRoleMenu(false);
       }
       if (walletRef.current && !walletRef.current.contains(e.target)) {
         setShowMenu(false);
@@ -91,24 +86,10 @@ export default function TopBar() {
       </div>
 
       <div className="topbar-right">
-        {/* Role Switcher */}
-        <div className="topbar-role-wrapper" ref={roleRef}>
-          <button className="topbar-role-btn" onClick={() => setShowRoleMenu(!showRoleMenu)}>
-            <ShieldCheck size={14} className="role-icon" />
-            <span className={`role-badge role-${role?.toLowerCase()}`}>{role || 'ADMIN'}</span>
-            <ChevronDown size={13} className="role-chevron" />
-          </button>
-          {showRoleMenu && (
-            <div className="topbar-dropdown">
-              <div className="dropdown-header">Switch Role</div>
-              {['ADMIN','MANAGER','AUDITOR','USER'].map(r => (
-                <button key={r} className={`dropdown-item ${r === role ? 'active' : ''}`}
-                  onClick={() => { switchRole(r); setShowRoleMenu(false); }}>
-                  <span className={`role-badge-mini role-${r.toLowerCase()}`}>{r}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Verified Role Badge (Locked to Connected Wallet) */}
+        <div className="topbar-role-badge-static" title={`Verified role for ${wallet || 'wallet'}: ${role || 'USER'}`}>
+          <ShieldCheck size={14} className="role-icon" />
+          <span className={`role-badge role-${role?.toLowerCase()}`}>{role || 'USER'}</span>
         </div>
 
         {/* Notifications */}

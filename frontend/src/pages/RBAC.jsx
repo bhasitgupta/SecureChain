@@ -3,11 +3,12 @@ import { useAuth } from '../context/AuthContext';
 import { 
   getAllWalletRoles, 
   setWalletRole, 
+  removeWalletRole,
   getRoleRequests, 
   approveRoleRequest, 
   declineRoleRequest 
 } from '../utils/roleRegistry';
-import { grantRoleOnChain } from '../lib/api';
+import { grantRoleOnChain, revokeRoleOnChain } from '../lib/api';
 import { truncateAddress, formatDate } from '../utils/formatters';
 import { 
   Shield, 
@@ -80,10 +81,22 @@ export default function RBAC() {
   };
 
   const handleRoleChange = async (address, role) => {
+    if (role === 'USER') {
+      await handleRevokeRole(address, walletRoles[address] || 'ADMIN');
+      return;
+    }
     setWalletRole(address, role);
     showNotification(`Updated ${truncateAddress(address)} to ${role}`);
     try {
       await grantRoleOnChain(role, address);
+    } catch {}
+  };
+
+  const handleRevokeRole = async (address, role) => {
+    removeWalletRole(address);
+    showNotification(`Revoked role from ${truncateAddress(address)}`);
+    try {
+      await revokeRoleOnChain(role, address);
     } catch {}
   };
 
@@ -270,17 +283,27 @@ export default function RBAC() {
                     <span className="badge badge-success">Active On-Chain</span>
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <select 
-                      className="input" 
-                      value={assignedR}
-                      onChange={e => handleRoleChange(addr, e.target.value)}
-                      style={{ padding: '4px 10px', fontSize: '0.8rem', width: 'auto', display: 'inline-block' }}
-                    >
-                      <option value="USER">USER</option>
-                      <option value="MANAGER">MANAGER</option>
-                      <option value="AUDITOR">AUDITOR</option>
-                      <option value="ADMIN">ADMIN</option>
-                    </select>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                      <select 
+                        className="input" 
+                        value={assignedR}
+                        onChange={e => handleRoleChange(addr, e.target.value)}
+                        style={{ padding: '4px 10px', fontSize: '0.8rem', width: 'auto', display: 'inline-block' }}
+                      >
+                        <option value="ADMIN">ADMIN</option>
+                        <option value="MANAGER">MANAGER</option>
+                        <option value="AUDITOR">AUDITOR</option>
+                        <option value="USER">USER</option>
+                      </select>
+                      <button 
+                        className="btn btn-ghost btn-xs" 
+                        title="Revoke role from this address"
+                        onClick={() => handleRevokeRole(addr, assignedR)}
+                        style={{ color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '4px 8px' }}
+                      >
+                        <UserX size={13} /> Revoke
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

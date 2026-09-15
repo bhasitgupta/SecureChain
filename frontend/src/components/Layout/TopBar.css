@@ -57,6 +57,18 @@
   position: relative;
 }
 
+.topbar-role-badge-static {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-base);
+  border: 1px solid rgba(187, 213, 218, 0.6);
+  color: var(--text-primary);
+  user-select: none;
+}
+
 .topbar-role-btn {
   display: flex;
   align-items: center;
