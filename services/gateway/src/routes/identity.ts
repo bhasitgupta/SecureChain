@@ -106,9 +106,8 @@ export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
         req.log.error(err);
         return reply.status(400).send({ error: 'On-chain registration failed: ' + (err.reason || err.shortMessage || err.message) });
       }
-    }
 
-    // Upsert in database
+      // Upsert in database
     await query(
       `INSERT INTO identities (did_hash, did, subject_id, account, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, 'Active', NOW(), NOW())

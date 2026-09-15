@@ -54,8 +54,9 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const session = loadSession();
     if (session && session.wallet) {
+      const resolvedRole = session.role || getRoleForWallet(session.wallet);
       setWallet(session.wallet);
-      setRole(session.role || getRoleForWallet(session.wallet));
+      setRole(resolvedRole);
       setAuthMethod(session.authMethod || 'wallet');
       setUid(session.uid || null);
       setIsConnected(true);
@@ -195,10 +196,13 @@ export function AuthProvider({ children }) {
 
     const address = result.address;
 
-    // SIWE signature for gateway authentication cookie
+    // SIWE signature for gateway authentication cookie & Bearer token
     try {
       const { message, signature } = await signAuthMessage(result.provider, address);
-      await walletLogin(message, signature, address);
+      const authRes = await walletLogin(message, signature, address);
+      if (authRes?.token) {
+        localStorage.setItem('sc_auth_token', authRes.token);
+      }
     } catch (authErr) {
       console.warn('Gateway signature auth skipped/failed:', authErr);
     }
@@ -225,6 +229,19 @@ export function AuthProvider({ children }) {
     return { address, role: authoritativeRole };
   }, []);
 
+  const authenticateSession = useCallback(async () => {
+    const activeWallet = wallet || (loadSession()?.wallet);
+    if (!activeWallet) throw new Error('No wallet connected');
+    const p = provider || window.ethereum;
+    if (!p) throw new Error('No wallet provider found. Please reconnect wallet.');
+    const { message, signature } = await signAuthMessage(p, activeWallet);
+    const authRes = await walletLogin(message, signature, activeWallet);
+    if (authRes?.token) {
+      localStorage.setItem('sc_auth_token', authRes.token);
+    }
+    return authRes;
+  }, [wallet, provider]);
+
   /**
    * Login via UID + Password (honest message)
    */
@@ -234,6 +251,7 @@ export function AuthProvider({ children }) {
 
   const disconnect = useCallback(() => {
     try { sessionStorage.setItem('sc_manual_disconnect', '1'); } catch (e) {}
+    try { localStorage.removeItem('sc_auth_token'); } catch (e) {}
     setWallet(null);
     setRole(null);
     setIsConnected(false);
@@ -257,7 +275,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       wallet, role, isConnected, authMethod, uid, loading, provider,
-      connectWithWallet, loginWithUID, disconnect, switchRole,
+      connectWithWallet, loginWithUID, disconnect, switchRole, authenticateSession,
       // Legacy alias for backward compat
       connect: () => connectWithWallet('metamask'),
     }}>

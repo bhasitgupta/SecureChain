@@ -1,13 +1,24 @@
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
+export function getAuthHeaders() {
+  try {
+    const token = localStorage.getItem('sc_auth_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function apiFetch(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const headers = {
+    ...getAuthHeaders(),
+    ...(options.headers || {}),
+  };
   const res = await fetch(url, {
     ...options,
     credentials: 'include',
-    headers: {
-      ...(options.headers || {}),
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -60,6 +71,9 @@ export async function uploadDocument(title, file) {
   const res = await fetch(`${API_BASE}/documents`, {
     method: 'POST',
     body: formData,
+    headers: {
+      ...getAuthHeaders(),
+    },
     credentials: 'include',
   });
 
@@ -79,6 +93,9 @@ export async function uploadDocumentRevision(docId, file) {
   const res = await fetch(`${API_BASE}/documents/${docId}/versions`, {
     method: 'POST',
     body: formData,
+    headers: {
+      ...getAuthHeaders(),
+    },
     credentials: 'include',
   });
 
@@ -108,6 +125,9 @@ export async function mintAsset({ to, assetClass, metadataURI, file }) {
   const res = await fetch(`${API_BASE}/assets/mint`, {
     method: 'POST',
     body: formData,
+    headers: {
+      ...getAuthHeaders(),
+    },
     credentials: 'include',
   });
 

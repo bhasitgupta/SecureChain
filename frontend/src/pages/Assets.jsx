@@ -8,7 +8,7 @@ import EmptyState from '../components/EmptyState';
 import './Assets.css';
 
 export default function Assets() {
-  const { role } = useAuth();
+  const { role, authenticateSession } = useAuth();
   const canMint = role === 'ADMIN';
 
   const [assets, setAssets] = useState(mockAssets);
@@ -79,6 +79,33 @@ export default function Assets() {
         setSelectedFile(null);
       }, 3500);
     } catch (err) {
+      if (err.message?.toLowerCase().includes('auth') || err.message?.toLowerCase().includes('token')) {
+        try {
+          // Attempt automatic SIWE signature if token was missing/expired
+          await authenticateSession();
+          const retryRes = await mintAsset({
+            to: toAddress || undefined,
+            assetClass,
+            metadataURI: description,
+            file: selectedFile,
+          });
+          setMintSuccess({
+            tokenId: retryRes.tokenId,
+            txHash: retryRes.txHash,
+          });
+          await loadAssetsData();
+          setTimeout(() => {
+            setShowMint(false);
+            setMintSuccess(null);
+            setDescription('');
+            setSelectedFile(null);
+          }, 3500);
+          return;
+        } catch (retryErr) {
+          setMintError('Authentication required. Please sign the authentication prompt in your wallet.');
+          return;
+        }
+      }
       setMintError(err.message || 'Minting failed');
     } finally {
       setMintLoading(false);
@@ -172,8 +199,29 @@ export default function Assets() {
             <h3 style={{ marginBottom: 'var(--space-lg)' }}>Mint New Asset (Admin Role Required)</h3>
             
             {mintError && (
-              <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#FEE2E2', color: '#991B1B' }}>
-                <AlertCircle size={16} /> {mintError}
+              <div className="flex items-center justify-between gap-sm p-3 rounded text-sm mb-3" style={{ background: '#FEE2E2', color: '#991B1B' }}>
+                <div className="flex items-center gap-sm">
+                  <AlertCircle size={16} /> <span>{mintError}</span>
+                </div>
+                {(mintError.toLowerCase().includes('auth') || mintError.toLowerCase().includes('token') || mintError.toLowerCase().includes('session')) && (
+                  <button 
+                    className="btn btn-sm btn-primary"
+                    style={{ fontSize: '0.75rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
+                    onClick={async () => {
+                      try {
+                        setMintLoading(true);
+                        await authenticateSession();
+                        setMintError('');
+                      } catch (e) {
+                        setMintError(e.message);
+                      } finally {
+                        setMintLoading(false);
+                      }
+                    }}
+                  >
+                    Authenticate Now
+                  </button>
+                )}
               </div>
             )}
             {mintSuccess && (

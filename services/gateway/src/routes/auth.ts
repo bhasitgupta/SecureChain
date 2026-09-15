@@ -38,13 +38,17 @@ export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =
       const did = formatDidPkh(config.chainId, address);
       const didHash = hashDid(did);
 
-      // Upsert identity cache
-      await query(
-        `INSERT INTO identities (did_hash, did, account, status, updated_at)
-         VALUES ($1, $2, $3, 'Active', NOW())
-         ON CONFLICT (did_hash) DO UPDATE SET updated_at = NOW()`,
-        [didHash, did, address.toLowerCase()]
-      );
+      // Upsert identity cache (non-blocking fallback)
+      try {
+        await query(
+          `INSERT INTO identities (did_hash, did, account, status, updated_at)
+           VALUES ($1, $2, $3, 'Active', NOW())
+           ON CONFLICT (did_hash) DO UPDATE SET updated_at = NOW()`,
+          [didHash, did, address.toLowerCase()]
+        );
+      } catch (dbErr: any) {
+        req.log.warn({ err: dbErr.message }, 'Could not cache identity to DB, continuing with on-chain auth');
+      }
 
       const token = jwt.sign(
         { address: address.toLowerCase(), did, didHash },
