@@ -1,19 +1,21 @@
 .line-sidebar {
   --accent-color: #FF0000;
-  --text-color: #849699;
+  --text-color: #5C7175;
   --marker-color: #BBD5DA;
-  --marker-length: 36px;
-  --marker-gap: 8px;
+  --marker-length: 18px;
+  --marker-gap: 6px;
   --tick-scale: 0.5;
-  --max-shift: 16px;
-  --item-gap: 16px;
-  --font-size: 0.85rem;
-  --smoothing: 100ms;
+  --max-shift: 4px;
+  --item-gap: 13px;
+  --font-size: 0.78rem;
+  --smoothing: 80ms;
 
   position: relative;
   display: flex;
   justify-content: flex-start;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .line-sidebar--markers {
@@ -23,41 +25,51 @@
 .line-sidebar__list {
   list-style: none;
   margin: 0;
-  padding: 0.75rem 0;
+  padding: 0.5rem 0;
   display: flex;
   flex-direction: column;
   gap: var(--item-gap);
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
-/* --effect (0..1) is driven per item by a rAF lerp in JS, so every derived
-   property below reads the same continuously-animating value and stays in
-   step, with no CSS transitions to stagger. */
+/* Hardware-accelerated and layout-isolated item container */
 .line-sidebar__item {
   position: relative;
   cursor: pointer;
   user-select: none;
+  width: 100%;
+  max-width: 100%;
+  contain: layout style;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
-/* Widen the pointer target so items react a touch before the cursor arrives */
+/* Controlled pointer hit-area that stays strictly within panel boundaries */
 .line-sidebar__item::before {
   content: '';
   position: absolute;
-  inset: -6px -24px;
+  inset: -4px -8px;
+  pointer-events: auto;
 }
 
+/* Text label with fixed font weight (zero layout reflow) and bounded translation */
 .line-sidebar__label {
   position: relative;
-  display: inline-flex;
-  align-items: baseline;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   font-size: var(--font-size);
-  line-height: 1.2;
-  font-weight: calc(500 + var(--effect, 0) * 250);
+  line-height: 1.25;
+  font-weight: 500;
   color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--text-color));
-  transform: translateX(calc(var(--effect, 0) * var(--max-shift)));
+  transform: translate3d(calc(var(--effect, 0) * var(--max-shift)), 0, 0);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  transition: transform 0.05s ease-out;
+  will-change: transform, color;
 }
 
 .line-sidebar__item[aria-current='true'] .line-sidebar__label {
@@ -67,16 +79,23 @@
 
 .line-sidebar__index {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  margin-right: 0.6rem;
-  font-size: 0.75em;
+  margin-right: 0.55rem;
+  font-size: 0.78em;
   opacity: calc(0.55 + var(--effect, 0) * 0.45);
   letter-spacing: 0.05em;
+  flex-shrink: 0;
 }
 
+/* Strictly contained label text that never wraps or bleeds off-screen */
 .line-sidebar__text {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
 }
 
+/* GPU-accelerated indicator marker */
 .line-sidebar__marker {
   position: absolute;
   top: 50%;
@@ -85,7 +104,8 @@
   width: var(--marker-length);
   background-color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--marker-color));
   transform-origin: left center;
-  transform: translateY(-50%) scaleX(calc(0.7 + var(--effect, 0) * 0.5));
+  transform: translate3d(0, -50%, 0) scaleX(calc(0.7 + var(--effect, 0) * 0.5));
+  will-change: transform, background-color;
 }
 
 .line-sidebar__item[aria-current='true'] .line-sidebar__marker {
@@ -93,7 +113,7 @@
   height: 2px;
 }
 
-/* Short static tick centered in the gap between two menu items */
+/* Static tick between items */
 .line-sidebar--markers .line-sidebar__item:not(:last-child)::after {
   content: '';
   position: absolute;
@@ -102,12 +122,13 @@
   height: 1px;
   width: calc(var(--marker-length) * var(--tick-scale));
   background-color: var(--marker-color);
-  opacity: 0.45;
-  transform: translateY(-50%);
+  opacity: 0.4;
+  transform: translate3d(0, -50%, 0);
+  will-change: transform;
 }
 
-/* When enabled, the in-between ticks grow with cursor proximity too */
+/* Scaled tick on hover proximity */
 .line-sidebar--scale-tick .line-sidebar__item:not(:last-child)::after {
   transform-origin: left center;
-  transform: translateY(-50%) scaleX(calc(0.7 + var(--effect, 0) * 0.6));
+  transform: translate3d(0, -50%, 0) scaleX(calc(0.7 + var(--effect, 0) * 0.6));
 }

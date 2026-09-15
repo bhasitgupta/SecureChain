@@ -3,7 +3,10 @@
 .app-layout {
   display: flex;
   min-height: 100vh;
-  background-color: var(--color-base);
+  background: 
+    radial-gradient(ellipse 65% 50% at 12% 15%, rgba(223, 241, 241, 0.45) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 45% at 88% 85%, rgba(187, 213, 218, 0.3) 0%, transparent 55%),
+    var(--color-base);
   position: relative;
   overflow-x: hidden;
   width: 100%;

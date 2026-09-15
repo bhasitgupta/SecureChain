@@ -46,6 +46,7 @@ const LineSidebar = ({
 }) => {
   const listRef = useRef(null);
   const itemRefs = useRef([]);
+  const centersRef = useRef([]);
   const targetsRef = useRef([]);
   const currentRef = useRef([]);
   const rafRef = useRef(null);
@@ -57,6 +58,12 @@ const LineSidebar = ({
   activeRef.current = activeIndex;
   smoothingRef.current = smoothing;
 
+  // Measure and cache centers of items to avoid layout thrashing in pointermove
+  const measureCenters = useCallback(() => {
+    const itemsList = itemRefs.current;
+    centersRef.current = itemsList.map(el => (el ? el.offsetTop + el.offsetHeight / 2 : 0));
+  }, []);
+
   // Sync controlled active state from route
   useEffect(() => {
     if (controlledActive !== undefined && controlledActive !== null) {
@@ -64,9 +71,18 @@ const LineSidebar = ({
     }
   }, [controlledActive]);
 
+  // Observe container resize to update item centers without reading layout during mouse moves
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    measureCenters();
+    const ro = new ResizeObserver(() => measureCenters());
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [items, measureCenters]);
+
   // Single rAF loop that eases every item's --effect toward its target using
-  // frame-rate independent exponential smoothing, so color, shift and scale
-  // all move together without staggering CSS transitions.
+  // frame-rate independent exponential smoothing
   const runFrame = useCallback(now => {
     const dt = Math.min((now - lastRef.current) / 1000, 0.05);
     lastRef.current = now;
@@ -81,10 +97,10 @@ const LineSidebar = ({
       const target = Math.max(targetsRef.current[i] || 0, activeRef.current === i ? 1 : 0);
       const cur = currentRef.current[i] || 0;
       const next = cur + (target - cur) * k;
-      const settled = Math.abs(target - next) < 0.0015;
+      const settled = Math.abs(target - next) < 0.002;
       const value = settled ? target : next;
       currentRef.current[i] = value;
-      el.style.setProperty('--effect', value.toFixed(4));
+      el.style.setProperty('--effect', value.toFixed(3));
       if (!settled) moving = true;
     }
 
@@ -100,6 +116,7 @@ const LineSidebar = ({
     rafRef.current = requestAnimationFrame(runFrame);
   }, [runFrame]);
 
+  // Ultra-fast zero-reflow pointer tracking
   const handlePointerMove = useCallback(
     e => {
       const list = listRef.current;
@@ -107,17 +124,21 @@ const LineSidebar = ({
       const rect = list.getBoundingClientRect();
       const pointerY = e.clientY - rect.top;
       const ease = FALLOFF_CURVES[falloff] ?? FALLOFF_CURVES.linear;
-      const itemsList = itemRefs.current;
-      for (let i = 0; i < itemsList.length; i++) {
-        const el = itemsList[i];
-        if (!el) continue;
-        const center = el.offsetTop + el.offsetHeight / 2;
+      const centers = centersRef.current;
+      const len = items.length;
+
+      if (centers.length !== len) {
+        measureCenters();
+      }
+
+      for (let i = 0; i < len; i++) {
+        const center = centersRef.current[i] || 0;
         const distance = Math.abs(pointerY - center);
         targetsRef.current[i] = ease(Math.max(0, 1 - distance / proximityRadius));
       }
       startLoop();
     },
-    [falloff, proximityRadius, startLoop]
+    [falloff, items.length, measureCenters, proximityRadius, startLoop]
   );
 
   const handlePointerLeave = useCallback(() => {

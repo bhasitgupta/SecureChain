@@ -38,7 +38,7 @@ const WalletIcons = {
 };
 
 export default function WalletSelector({ onSuccess }) {
-  const { connectWithWallet } = useAuth();
+  const { connectWithWallet, connectDemoAccount } = useAuth();
   const [selected, setSelected] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState(null);
@@ -115,6 +115,40 @@ export default function WalletSelector({ onSuccess }) {
         ) : (
           'Connect Wallet'
         )}
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0 10px 0' }}>
+        <div style={{ flex: 1, height: '1px', background: 'var(--color-slate-200, #E2E8F0)' }} />
+        <span style={{ fontSize: '0.68rem', color: 'var(--text-tertiary, #64748B)', fontWeight: 600, letterSpacing: '0.06em' }}>EVALUATION & DEMO ACCESS</span>
+        <div style={{ flex: 1, height: '1px', background: 'var(--color-slate-200, #E2E8F0)' }} />
+      </div>
+
+      <button
+        type="button"
+        className="ws-demo-access-btn"
+        style={{
+          width: '100%',
+          padding: '9px 12px',
+          borderRadius: 'var(--radius-md, 12px)',
+          border: '1px dashed var(--color-accent-medium, #BBD5DA)',
+          background: 'rgba(223, 241, 241, 0.35)',
+          color: 'var(--text-primary, #0F172A)',
+          fontSize: '0.78rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          transition: 'all 0.15s ease'
+        }}
+        onClick={() => {
+          const res = connectDemoAccount('ADMIN');
+          setSuccess(true);
+          setTimeout(() => onSuccess?.(res), 500);
+        }}
+      >
+        <span>Instant Demo Admin Access</span>
       </button>
 
       <p className="ws-terms">

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
-import ThreeBackground from '../Common/ThreeBackground';
 import './AppLayout.css';
 
 export default function AppLayout() {
@@ -10,7 +9,6 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
-      <ThreeBackground opacity={0.3} />
       
       {/* Mobile Drawer Backdrop */}
       {mobileSidebarOpen && (
