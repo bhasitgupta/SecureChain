@@ -100,15 +100,15 @@ export async function switchNetwork(provider) {
   } catch (switchError) {
     // Chain not added — add it
     if (switchError.code === 4902) {
-      const networkName = import.meta.env.VITE_NETWORK_NAME || 'Polygon Amoy';
-      const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://rpc-amoy.polygon.technology';
+      const networkName = import.meta.env.VITE_NETWORK_NAME || 'Polygon Amoy Testnet';
+      const rpcUrl = import.meta.env.VITE_RPC_URL || 'https://polygon-amoy.drpc.org';
 
       await provider.request({
         method: 'wallet_addEthereumChain',
         params: [{
           chainId: hexChainId,
           chainName: networkName,
-          rpcUrls: [rpcUrl],
+          rpcUrls: [rpcUrl, 'https://polygon-amoy-bor-rpc.publicnode.com'],
           nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
           blockExplorerUrls: ['https://amoy.polygonscan.com/'],
         }],

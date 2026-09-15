@@ -83,7 +83,7 @@ export default function Settings() {
             <div>
               <span className="text-sm text-secondary">RPC</span>
               <div className="font-mono text-xs text-secondary" style={{ marginTop: 4, wordBreak: 'break-all' }}>
-                {NETWORK.rpcUrl || 'https://rpc-amoy.polygon.technology'}
+                {NETWORK.rpcUrl || 'https://polygon-amoy.drpc.org'}
               </div>
             </div>
           </div>

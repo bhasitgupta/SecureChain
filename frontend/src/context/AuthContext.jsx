@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { connectWallet, switchNetwork, signAuthMessage, onAccountsChanged, onChainChanged } from '../utils/walletUtils';
-import { getRoleForWallet, checkOnChainRole, setWalletRole } from '../utils/roleRegistry';
+import { getRoleForWallet, checkOnChainRole, setWalletRole, resolveAuthoritativeRole } from '../utils/roleRegistry';
 import { walletLogin, fetchRolesForAddress } from '../lib/api';
 
 const AuthContext = createContext(null);
@@ -64,25 +64,22 @@ export function AuthProvider({ children }) {
         saveSession({ ...session, role: resolvedRole });
       }
 
-      // Verify on-chain status asynchronously via gateway or direct contract
+      // Verify on-chain and authoritative status asynchronously
+      resolveAuthoritativeRole(session.wallet).then(resRole => {
+        if (resRole && resRole !== 'USER') {
+          setRole(resRole);
+          saveSession({ ...session, role: resRole });
+        }
+      });
       fetchRolesForAddress(session.wallet)
         .then((data) => {
-          const derived = deriveRoleFromRoleMap(data.roles);
+          const derived = deriveRoleFromRoleMap(data?.roles);
           if (derived && derived !== 'USER') {
             setRole(derived);
-            setWalletRole(session.wallet, derived);
             saveSession({ ...session, role: derived });
           }
         })
-        .catch(() => {
-          checkOnChainRole(session.wallet).then(chainRole => {
-            if (chainRole && chainRole !== 'USER') {
-              setRole(chainRole);
-              setWalletRole(session.wallet, chainRole);
-              saveSession({ ...session, role: chainRole });
-            }
-          });
-        });
+        .catch(() => {});
 
       if (session.authMethod === 'wallet' && window.ethereum) {
         window.ethereum.request({ method: 'eth_accounts' }).then(accounts => {
@@ -91,17 +88,10 @@ export function AuthProvider({ children }) {
             const activeAccount = accounts[0];
             if (activeAccount.toLowerCase() !== session.wallet.toLowerCase()) {
               setWallet(activeAccount);
-              fetchRolesForAddress(activeAccount)
-                .then((data) => {
-                  const derived = deriveRoleFromRoleMap(data.roles);
-                  setRole(derived);
-                  saveSession({ ...session, wallet: activeAccount, role: derived });
-                })
-                .catch(() => {
-                  const activeRole = getRoleForWallet(activeAccount);
-                  setRole(activeRole);
-                  saveSession({ ...session, wallet: activeAccount, role: activeRole });
-                });
+              resolveAuthoritativeRole(activeAccount).then(effRole => {
+                setRole(effRole);
+                saveSession({ ...session, wallet: activeAccount, role: effRole });
+              });
             }
           }
         }).catch(() => {});
@@ -114,19 +104,11 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const syncCurrentRole = () => {
       if (wallet) {
-        fetchRolesForAddress(wallet)
-          .then((data) => {
-            const derived = deriveRoleFromRoleMap(data.roles);
-            setRole(derived);
-            const session = loadSession();
-            if (session) saveSession({ ...session, role: derived });
-          })
-          .catch(() => {
-            const latestRole = getRoleForWallet(wallet);
-            setRole(latestRole);
-            const session = loadSession();
-            if (session) saveSession({ ...session, role: latestRole });
-          });
+        resolveAuthoritativeRole(wallet).then(effRole => {
+          setRole(effRole);
+          const session = loadSession();
+          if (session) saveSession({ ...session, role: effRole });
+        });
       }
     };
 
@@ -161,20 +143,11 @@ export function AuthProvider({ children }) {
       } else {
         const newAddr = accounts[0];
         setWallet(newAddr);
-        fetchRolesForAddress(newAddr)
-          .then((data) => {
-            const derived = deriveRoleFromRoleMap(data.roles);
-            const effectiveRole = (derived && derived !== 'USER') ? derived : getRoleForWallet(newAddr);
-            setRole(effectiveRole);
-            const session = loadSession();
-            if (session) saveSession({ ...session, wallet: newAddr, role: effectiveRole });
-          })
-          .catch(() => {
-            const assignedRole = getRoleForWallet(newAddr);
-            setRole(assignedRole);
-            const session = loadSession();
-            if (session) saveSession({ ...session, wallet: newAddr, role: assignedRole });
-          });
+        resolveAuthoritativeRole(newAddr).then(effRole => {
+          setRole(effRole);
+          const session = loadSession();
+          if (session) saveSession({ ...session, wallet: newAddr, role: effRole });
+        });
       }
     });
 
@@ -208,20 +181,15 @@ export function AuthProvider({ children }) {
       console.warn('Gateway signature auth skipped/failed:', authErr);
     }
 
-    // Authoritative on-chain role from gateway API or contract
-    let authoritativeRole = getRoleForWallet(address);
+    // Authoritative role resolution from on-chain, cloud store, and defaults
+    let authoritativeRole = await resolveAuthoritativeRole(address);
     try {
       const roleData = await fetchRolesForAddress(address);
-      const derived = deriveRoleFromRoleMap(roleData.roles);
+      const derived = deriveRoleFromRoleMap(roleData?.roles);
       if (derived && derived !== 'USER') {
         authoritativeRole = derived;
       }
-    } catch {
-      const onChain = await checkOnChainRole(address);
-      if (onChain && onChain !== 'USER') {
-        authoritativeRole = onChain;
-      }
-    }
+    } catch {}
 
     setWallet(address);
     setRole(authoritativeRole);

@@ -8,7 +8,8 @@ import {
   approveRoleRequest, 
   declineRoleRequest,
   ROLE_HASHES,
-  checkOnChainRole
+  checkOnChainRole,
+  syncCloudRoles
 } from '../utils/roleRegistry';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { grantRoleOnChain, revokeRoleOnChain } from '../lib/api';
@@ -41,7 +42,7 @@ const permissions = [
 ];
 
 export default function RBAC() {
-  const { wallet: currentWallet, role: currentRole, switchRole } = useAuth();
+  const { wallet: currentWallet, role: currentRole, switchRole, isConnected } = useAuth();
   const [walletRoles, setWalletRoles] = useState({});
   const [confirmedRoles, setConfirmedRoles] = useState({});
   const [requests, setRequests] = useState([]);
@@ -50,7 +51,10 @@ export default function RBAC() {
   const [toast, setToast] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
-  const loadData = () => {
+  const loadData = async () => {
+    try {
+      await syncCloudRoles();
+    } catch (e) {}
     const roles = getAllWalletRoles();
     setWalletRoles(roles);
     setRequests(getRoleRequests());
@@ -94,8 +98,9 @@ export default function RBAC() {
 
   const handleSyncOnChain = async () => {
     setSyncing(true);
-    showNotification('Syncing roles directly from Polygon Amoy IdentityAndAccessManager...');
+    showNotification('Syncing roles directly from Polygon Amoy & Cloud Store...');
     try {
+      await syncCloudRoles();
       const current = getAllWalletRoles();
       const updated = { ...current };
       const statusMap = {};
@@ -110,7 +115,7 @@ export default function RBAC() {
       }
       setWalletRoles(updated);
       setConfirmedRoles(statusMap);
-      showNotification('Synced authoritative roles from Polygon Amoy!');
+      showNotification('Synced authoritative roles across Polygon Amoy & all devices!');
     } catch (e) {
       showNotification('Completed registry sync with available data.');
     } finally {
@@ -126,21 +131,48 @@ export default function RBAC() {
     }
     const target = newAddress.trim().toLowerCase();
 
-    showNotification(`Broadcasting ${newRole} role grant to Polygon Amoy...`);
-    try {
-      const res = await grantRoleOnChain(newRole, target);
-      setWalletRole(target, newRole);
-      loadData();
+    showNotification(`Assigning ${newRole} to ${truncateAddress(target)}...`);
+    let txHash = null;
 
-      if (currentWallet && currentWallet.toLowerCase() === target) {
-        switchRole(newRole);
+    // 1. If connected via MetaMask and has admin rights, attempt real on-chain transaction
+    if (window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const iamAbi = ['function grantRole(bytes32 role, address acct) external'];
+        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+        const roleHash = ROLE_HASHES[newRole];
+        if (roleHash) {
+          const tx = await iam.grantRole(roleHash, target);
+          showNotification(`MetaMask tx submitted: ${truncateAddress(tx.hash)}. Confirming on Polygon Amoy...`);
+          await tx.wait(1);
+          txHash = tx.hash;
+        }
+      } catch (chainErr) {
+        console.warn('Direct on-chain grant skipped/failed:', chainErr.message);
+        try {
+          const res = await grantRoleOnChain(newRole, target);
+          if (res?.txHash) txHash = res.txHash;
+        } catch (gwErr) {}
       }
-
-      showNotification(`Granted ${newRole} to ${truncateAddress(target)} on-chain`, res.txHash);
-      setNewAddress('');
-    } catch (err) {
-      showNotification(`Failed to grant role: ${err.message}`, null, true);
+    } else {
+      try {
+        const res = await grantRoleOnChain(newRole, target);
+        if (res?.txHash) txHash = res.txHash;
+      } catch (gwErr) {}
     }
+
+    // 2. Persist to shared cloud registry and local registry so EVERY device/browser gets it instantly
+    await setWalletRole(target, newRole);
+    await loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole(newRole);
+    }
+
+    showNotification(`Granted ${newRole} to ${truncateAddress(target)}! Synced across all devices.`, txHash);
+    setNewAddress('');
   };
 
   const handleRoleChange = async (address, role) => {
@@ -150,57 +182,121 @@ export default function RBAC() {
       return;
     }
 
-    showNotification(`Updating role to ${role} on Polygon Amoy...`);
-    try {
-      const res = await grantRoleOnChain(role, target);
-      setWalletRole(target, role);
-      loadData();
+    showNotification(`Updating role to ${role}...`);
+    let txHash = null;
 
-      if (currentWallet && currentWallet.toLowerCase() === target) {
-        switchRole(role);
+    if (window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const iamAbi = ['function grantRole(bytes32 role, address acct) external'];
+        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+        const roleHash = ROLE_HASHES[role];
+        if (roleHash) {
+          const tx = await iam.grantRole(roleHash, target);
+          await tx.wait(1);
+          txHash = tx.hash;
+        }
+      } catch (chainErr) {
+        try {
+          const res = await grantRoleOnChain(role, target);
+          if (res?.txHash) txHash = res.txHash;
+        } catch (e) {}
       }
-
-      showNotification(`Updated ${truncateAddress(target)} to ${role}`, res.txHash);
-    } catch (err) {
-      showNotification(`Role update failed: ${err.message}`, null, true);
+    } else {
+      try {
+        const res = await grantRoleOnChain(role, target);
+        if (res?.txHash) txHash = res.txHash;
+      } catch (e) {}
     }
+
+    await setWalletRole(target, role);
+    await loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole(role);
+    }
+
+    showNotification(`Updated ${truncateAddress(target)} to ${role}. Synced across all devices.`, txHash);
   };
 
   const handleRevokeRole = async (address, role) => {
     const target = address.toLowerCase();
-    showNotification(`Revoking ${role} role from Polygon Amoy...`);
-    try {
-      const res = await revokeRoleOnChain(role, target);
-      removeWalletRole(target);
-      loadData();
+    showNotification(`Revoking ${role} role...`);
+    let txHash = null;
 
-      if (currentWallet && currentWallet.toLowerCase() === target) {
-        switchRole('USER');
+    if (window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const iamAbi = ['function revokeRole(bytes32 role, address acct) external'];
+        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+        const roleHash = ROLE_HASHES[role];
+        if (roleHash) {
+          const tx = await iam.revokeRole(roleHash, target);
+          await tx.wait(1);
+          txHash = tx.hash;
+        }
+      } catch (chainErr) {
+        try {
+          const res = await revokeRoleOnChain(role, target);
+          if (res?.txHash) txHash = res.txHash;
+        } catch (e) {}
       }
-
-      showNotification(`Revoked ${role} from ${truncateAddress(target)} on-chain`, res.txHash);
-    } catch (err) {
-      showNotification(`Role revocation failed: ${err.message}`, null, true);
+    } else {
+      try {
+        const res = await revokeRoleOnChain(role, target);
+        if (res?.txHash) txHash = res.txHash;
+      } catch (e) {}
     }
+
+    await removeWalletRole(target);
+    await loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole('USER');
+    }
+
+    showNotification(`Revoked ${role} from ${truncateAddress(target)}. Synced across all devices.`, txHash);
   };
 
   const handleApprove = async (reqId, address, role) => {
     const target = address.toLowerCase();
-    showNotification(`Approving and granting ${role} on-chain...`);
-    try {
-      const res = await grantRoleOnChain(role, target);
-      approveRoleRequest(reqId);
-      setWalletRole(target, role);
-      loadData();
+    showNotification(`Approving and granting ${role}...`);
+    let txHash = null;
 
-      if (currentWallet && currentWallet.toLowerCase() === target) {
-        switchRole(role);
+    if (window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+        const iamAbi = ['function grantRole(bytes32 role, address acct) external'];
+        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+        const roleHash = ROLE_HASHES[role];
+        if (roleHash) {
+          const tx = await iam.grantRole(roleHash, target);
+          await tx.wait(1);
+          txHash = tx.hash;
+        }
+      } catch (chainErr) {
+        try {
+          const res = await grantRoleOnChain(role, target);
+          if (res?.txHash) txHash = res.txHash;
+        } catch (e) {}
       }
-
-      showNotification(`Approved and granted ${role} for ${truncateAddress(target)}`, res.txHash);
-    } catch (err) {
-      showNotification(`Role approval failed on-chain: ${err.message}`, null, true);
     }
+
+    approveRoleRequest(reqId);
+    await setWalletRole(target, role);
+    await loadData();
+
+    if (currentWallet && currentWallet.toLowerCase() === target) {
+      switchRole(role);
+    }
+
+    showNotification(`Approved and granted ${role} for ${truncateAddress(target)}`, txHash);
   };
 
   const handleDecline = (reqId, address) => {

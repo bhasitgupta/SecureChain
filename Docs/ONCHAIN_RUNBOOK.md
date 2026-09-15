@@ -37,7 +37,7 @@ npm run dev:frontend
 | `VITE_API_BASE_URL` | `http://localhost:3001/api` | `https://api.yourdomain.com/api` | Gateway backend API base URL |
 | `VITE_NETWORK_NAME` | `Polygon Amoy Testnet` | `Polygon Amoy Testnet` | Network name for wallet prompt |
 | `VITE_CHAIN_ID` | `80002` | `80002` | Polygon Amoy EIP-155 Chain ID |
-| `VITE_RPC_URL` | `https://rpc-amoy.polygon.technology` | `https://rpc-amoy.polygon.technology` | Public RPC endpoint |
+| `VITE_RPC_URL` | `https://polygon-amoy.drpc.org` | `https://polygon-amoy.drpc.org` | Public RPC endpoint |
 | `VITE_BLOCK_EXPLORER` | `https://amoy.polygonscan.com` | `https://amoy.polygonscan.com` | Block explorer base URL |
 | `VITE_CONTRACT_IAM` | `0x0Ca09ba889727bE9FbBAA53d2fE1541bF2f8cee6` | Same | Identity & Access Manager |
 | `VITE_CONTRACT_NFT` | `0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D` | Same | Enterprise Asset NFT |

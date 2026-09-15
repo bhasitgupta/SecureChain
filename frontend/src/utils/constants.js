@@ -34,17 +34,17 @@ export const ASSET_STATUS = { 0: 'Uninitialized', 1: 'Active', 2: 'Transferred',
 
 // ── Contract addresses loaded from env with real verified Polygon Amoy deployments as default ──
 export const CONTRACT_ADDRESSES = {
-  IdentityAndAccessManager: import.meta.env.VITE_CONTRACT_IAM || '0x0Ca09ba889727bE9FbBAA53d2fE1541bF2f8cee6',
-  EnterpriseAssetNFT:       import.meta.env.VITE_CONTRACT_NFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D',
-  DocumentAnchorRegistry:   import.meta.env.VITE_CONTRACT_ANCHOR || '0x8921960116d0D4a8A26aad7eA330E3f098C7F58F',
-  RecoveryManager:          import.meta.env.VITE_CONTRACT_RECOVERY || '0xf3F590b6DFA67a8453c62C8E065cdb5127518b90',
+  IdentityAndAccessManager: import.meta.env?.VITE_CONTRACT_IAM || '0x0Ca09ba889727bE9FbBAA53d2fE1541bF2f8cee6',
+  EnterpriseAssetNFT:       import.meta.env?.VITE_CONTRACT_NFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D',
+  DocumentAnchorRegistry:   import.meta.env?.VITE_CONTRACT_ANCHOR || '0x8921960116d0D4a8A26aad7eA330E3f098C7F58F',
+  RecoveryManager:          import.meta.env?.VITE_CONTRACT_RECOVERY || '0xf3F590b6DFA67a8453c62C8E065cdb5127518b90',
 };
 
 export const NETWORK = {
-  name:          import.meta.env.VITE_NETWORK_NAME || 'Polygon Amoy Testnet',
-  chainId:       import.meta.env.VITE_CHAIN_ID || '80002',
-  rpcUrl:        import.meta.env.VITE_RPC_URL || 'https://rpc-amoy.polygon.technology',
-  fallbackRpcUrl:'https://polygon-amoy.drpc.org',
-  blockExplorer: import.meta.env.VITE_BLOCK_EXPLORER || 'https://amoy.polygonscan.com',
+  name:          import.meta.env?.VITE_NETWORK_NAME || 'Polygon Amoy Testnet',
+  chainId:       import.meta.env?.VITE_CHAIN_ID || '80002',
+  rpcUrl:        import.meta.env?.VITE_RPC_URL || 'https://polygon-amoy.drpc.org',
+  fallbackRpcUrl:'https://polygon-amoy-bor-rpc.publicnode.com',
+  blockExplorer: import.meta.env?.VITE_BLOCK_EXPLORER || 'https://amoy.polygonscan.com',
   nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
 };
