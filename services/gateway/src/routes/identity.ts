@@ -3,6 +3,7 @@ import { RegisterIdentitySchema, formatDidPkh, hashDid } from '@sih26125/common'
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { getIamContract, adminSigner, provider } from '../chain.js';
+import { requireOnChainRole } from '../auth.js';
 
 export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/identity - list all cached identities
@@ -76,27 +77,34 @@ export const identityRoutes: FastifyPluginAsync = async (fastify: FastifyInstanc
   });
 
   // POST /api/identity - Register identity
-  fastify.post<{ Body: { account: string; subjectId: string } }>('/', async (req, reply) => {
-    const parsed = RegisterIdentitySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.issues[0].message });
-    }
+  fastify.post<{ Body: { account: string; subjectId: string } }>(
+    '/',
+    { preHandler: [requireOnChainRole('ADMIN')] },
+    async (req, reply) => {
+      const parsed = RegisterIdentitySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.issues[0].message });
+      }
 
-    const { account, subjectId } = parsed.data;
-    const did = formatDidPkh(config.chainId, account);
-    const didHash = hashDid(did);
+      const { account, subjectId } = parsed.data;
+      const did = formatDidPkh(config.chainId, account);
+      const didHash = hashDid(did);
 
-    let txHash: string | undefined;
+      let txHash: string | undefined;
 
-    const iam = getIamContract(adminSigner);
-    if (config.iamAddress && iam && adminSigner) {
+      const iam = getIamContract(adminSigner);
+      if (!config.iamAddress || !iam || !adminSigner) {
+        return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+      }
+
       try {
+        await iam.registerIdentity.staticCall(didHash, account, subjectId);
         const tx = await iam.registerIdentity(didHash, account, subjectId);
         txHash = tx.hash;
         await tx.wait();
       } catch (err: any) {
         req.log.error(err);
-        return reply.status(400).send({ error: 'On-chain registration failed: ' + err.message });
+        return reply.status(400).send({ error: 'On-chain registration failed: ' + (err.reason || err.shortMessage || err.message) });
       }
     }
 

@@ -22,6 +22,20 @@ export async function apiFetch(endpoint, options = {}) {
   return res.json();
 }
 
+// ── Auth ──
+export async function walletLogin(message, signature, address) {
+  return apiFetch('/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, signature, address }),
+  });
+}
+
+export async function fetchChainHealth() {
+  const res = await fetch(`${API_BASE.replace('/api', '')}/health`, { credentials: 'include' });
+  return res.json();
+}
+
 // ── Dashboard / Stats ──
 export async function fetchDashboardStats() {
   try {

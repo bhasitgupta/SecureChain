@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { GrantRoleSchema, Roles } from '@sih26125/common';
 import { config } from '../config.js';
 import { getIamContract, adminSigner, provider } from '../chain.js';
+import { requireOnChainRole } from '../auth.js';
 
 export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/roles/:address - check roles for address
@@ -40,6 +41,7 @@ export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
   // POST /api/roles/grant - Admin grants role
   fastify.post<{ Body: { role: 'ADMIN_ROLE' | 'MANAGER_ROLE' | 'AUDITOR_ROLE' | 'USER_ROLE'; account: string } }>(
     '/grant',
+    { preHandler: [requireOnChainRole('ADMIN')] },
     async (req, reply) => {
       const parsed = GrantRoleSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -55,12 +57,13 @@ export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       }
 
       try {
+        await iam.grantRole.staticCall(roleHash, account);
         const tx = await iam.grantRole(roleHash, account);
         await tx.wait();
         return { success: true, role, account, txHash: tx.hash };
       } catch (err: any) {
         req.log.error(err);
-        return reply.status(400).send({ error: 'Grant role failed: ' + err.message });
+        return reply.status(400).send({ error: 'Grant role failed: ' + (err.reason || err.shortMessage || err.message) });
       }
     }
   );
@@ -68,6 +71,7 @@ export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
   // POST /api/roles/revoke - Admin revokes role
   fastify.post<{ Body: { role: 'ADMIN_ROLE' | 'MANAGER_ROLE' | 'AUDITOR_ROLE' | 'USER_ROLE'; account: string } }>(
     '/revoke',
+    { preHandler: [requireOnChainRole('ADMIN')] },
     async (req, reply) => {
       const parsed = GrantRoleSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -83,13 +87,15 @@ export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       }
 
       try {
+        await iam.revokeRole.staticCall(roleHash, account);
         const tx = await iam.revokeRole(roleHash, account);
         await tx.wait();
         return { success: true, role, account, txHash: tx.hash };
       } catch (err: any) {
         req.log.error(err);
-        return reply.status(400).send({ error: 'Revoke role failed: ' + err.message });
+        return reply.status(400).send({ error: 'Revoke role failed: ' + (err.reason || err.shortMessage || err.message) });
       }
     }
   );
 };
+

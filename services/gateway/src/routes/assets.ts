@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { query } from '../db.js';
 import { putObject, getObject } from '../minio.js';
 import { getNftContract, adminSigner, provider } from '../chain.js';
+import { requireOnChainRole } from '../auth.js';
 
 export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/assets - list assets from DB cache / chain
@@ -113,45 +114,57 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
   });
 
   // POST /api/assets/mint - Multipart form with thumbnail image + metadata
-  fastify.post('/mint', async (req, reply) => {
-    let toAddress: string | undefined;
-    let assetClass: string | undefined;
-    let metadataURI: string = '';
-    let thumbnailBuffer: Buffer | null = null;
-    let thumbnailMime: string = 'image/png';
+  fastify.post(
+    '/mint',
+    { preHandler: [requireOnChainRole('ADMIN')] },
+    async (req, reply) => {
+      let toAddress: string | undefined;
+      let assetClass: string | undefined;
+      let metadataURI: string = '';
+      let thumbnailBuffer: Buffer | null = null;
+      let thumbnailMime: string = 'image/png';
 
-    if (req.isMultipart()) {
-      const parts = req.parts();
-      for await (const part of parts) {
-        if (part.type === 'file' && part.fieldname === 'thumbnail') {
-          thumbnailBuffer = await part.toBuffer();
-          thumbnailMime = part.mimetype;
-        } else if (part.type === 'field') {
-          if (part.fieldname === 'to') toAddress = part.value as string;
-          if (part.fieldname === 'assetClass') assetClass = part.value as string;
-          if (part.fieldname === 'metadataURI') metadataURI = part.value as string;
+      if (req.isMultipart()) {
+        const parts = req.parts();
+        for await (const part of parts) {
+          if (part.type === 'file' && part.fieldname === 'thumbnail') {
+            thumbnailBuffer = await part.toBuffer();
+            thumbnailMime = part.mimetype;
+          } else if (part.type === 'field') {
+            if (part.fieldname === 'to') toAddress = part.value as string;
+            if (part.fieldname === 'assetClass') assetClass = part.value as string;
+            if (part.fieldname === 'metadataURI') metadataURI = part.value as string;
+          }
         }
+      } else {
+        const body = req.body as any;
+        toAddress = body?.to;
+        assetClass = body?.assetClass;
+        metadataURI = body?.metadataURI || '';
       }
-    } else {
-      const body = req.body as any;
-      toAddress = body?.to;
-      assetClass = body?.assetClass;
-      metadataURI = body?.metadataURI || '';
-    }
 
-    if (!toAddress || !assetClass) {
-      return reply.status(400).send({ error: 'Missing required fields: to, assetClass' });
-    }
+      // Default `to` to relayer address when blank ("retain in custody")
+      if (!toAddress || toAddress.trim() === '') {
+        toAddress = adminSigner?.address;
+      }
 
-    const did = formatDidPkh(config.chainId, toAddress);
-    const didHash = hashDid(did);
+      if (!toAddress || !assetClass) {
+        return reply.status(400).send({ error: 'Missing required fields: to, assetClass' });
+      }
 
-    let tokenId: string | null = null;
-    let txHash: string | null = null;
+      const did = formatDidPkh(config.chainId, toAddress);
+      const didHash = hashDid(did);
 
-    const nft = getNftContract(adminSigner);
-    if (config.nftAddress && nft && adminSigner) {
+      let tokenId: string | null = null;
+      let txHash: string | null = null;
+
+      const nft = getNftContract(adminSigner);
+      if (!config.nftAddress || !nft || !adminSigner) {
+        return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+      }
+
       try {
+        await nft.mint.staticCall(toAddress, didHash, assetClass, metadataURI);
         const tx = await nft.mint(toAddress, didHash, assetClass, metadataURI);
         txHash = tx.hash;
         const receipt = await tx.wait();
@@ -167,115 +180,129 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
         }
       } catch (err: any) {
         req.log.error(err);
-        return reply.status(400).send({ error: 'On-chain mint failed: ' + err.message });
+        return reply.status(400).send({ error: 'On-chain mint failed: ' + (err.reason || err.shortMessage || err.message) });
       }
+
+      if (!tokenId) {
+        return reply.status(500).send({ error: 'Mint succeeded on-chain but failed to parse tokenId from receipt' });
+      }
+
+      // Save thumbnail in MinIO if provided
+      if (thumbnailBuffer) {
+        const minioKey = `${tokenId}_thumbnail`;
+        await putObject(
+          config.minio.buckets.assetThumbnails,
+          minioKey,
+          thumbnailBuffer,
+          thumbnailBuffer.length,
+          { 'Content-Type': thumbnailMime }
+        );
+
+        await query(
+          `INSERT INTO asset_thumbnails (token_id, minio_key, mime_type, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (token_id) DO UPDATE SET minio_key = $2, mime_type = $3`,
+          [tokenId, minioKey, thumbnailMime]
+        );
+      }
+
+      return {
+        success: true,
+        tokenId,
+        txHash,
+        thumbnailUrl: thumbnailBuffer ? `/api/assets/${tokenId}/thumbnail` : null,
+        assetClass,
+        owner: toAddress.toLowerCase(),
+        did,
+      };
     }
-
-    // Fallback ID if off-chain or indexing
-    if (!tokenId) {
-      const countRes = await query(`SELECT COUNT(*) FROM asset_thumbnails`);
-      tokenId = (parseInt(countRes.rows[0].count, 10) + 1).toString();
-    }
-
-    // Save thumbnail in MinIO if provided
-    if (thumbnailBuffer) {
-      const minioKey = `${tokenId}_thumbnail`;
-      await putObject(
-        config.minio.buckets.assetThumbnails,
-        minioKey,
-        thumbnailBuffer,
-        thumbnailBuffer.length,
-        { 'Content-Type': thumbnailMime }
-      );
-
-      await query(
-        `INSERT INTO asset_thumbnails (token_id, minio_key, mime_type, created_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (token_id) DO UPDATE SET minio_key = $2, mime_type = $3`,
-        [tokenId, minioKey, thumbnailMime]
-      );
-    }
-
-    return {
-      success: true,
-      tokenId,
-      txHash,
-      thumbnailUrl: thumbnailBuffer ? `/api/assets/${tokenId}/thumbnail` : null,
-      assetClass,
-      owner: toAddress.toLowerCase(),
-      did,
-    };
-  });
+  );
 
   // POST /api/assets/allocate - Admin initial allocation
-  fastify.post<{ Body: { tokenId: string; to: string } }>('/allocate', async (req, reply) => {
-    const { tokenId, to } = req.body;
-    if (!tokenId || !to) {
-      return reply.status(400).send({ error: 'Missing tokenId or to' });
-    }
+  fastify.post<{ Body: { tokenId: string; to: string } }>(
+    '/allocate',
+    { preHandler: [requireOnChainRole('ADMIN')] },
+    async (req, reply) => {
+      const { tokenId, to } = req.body;
+      if (!tokenId || !to) {
+        return reply.status(400).send({ error: 'Missing tokenId or to' });
+      }
 
-    const toDid = formatDidPkh(config.chainId, to);
-    const toDidHash = hashDid(toDid);
+      const toDid = formatDidPkh(config.chainId, to);
+      const toDidHash = hashDid(toDid);
 
-    const nft = getNftContract(adminSigner);
-    if (!config.nftAddress || !nft || !adminSigner) {
-      return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
-    }
+      const nft = getNftContract(adminSigner);
+      if (!config.nftAddress || !nft || !adminSigner) {
+        return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+      }
 
-    try {
-      const tx = await nft.allocateInitial(BigInt(tokenId), to, toDidHash);
-      await tx.wait();
-      return { success: true, tokenId, to, txHash: tx.hash };
-    } catch (err: any) {
-      req.log.error(err);
-      return reply.status(400).send({ error: 'Allocation failed: ' + err.message });
+      try {
+        await nft.allocateInitial.staticCall(BigInt(tokenId), to, toDidHash);
+        const tx = await nft.allocateInitial(BigInt(tokenId), to, toDidHash);
+        await tx.wait();
+        return { success: true, tokenId, to, txHash: tx.hash };
+      } catch (err: any) {
+        req.log.error(err);
+        return reply.status(400).send({ error: 'Allocation failed: ' + (err.reason || err.shortMessage || err.message) });
+      }
     }
-  });
+  );
 
   // POST /api/assets/transfer - Policy transfer
-  fastify.post<{ Body: { tokenId: string; from: string; to: string } }>('/transfer', async (req, reply) => {
-    const { tokenId, from, to } = req.body;
-    if (!tokenId || !from || !to) {
-      return reply.status(400).send({ error: 'Missing tokenId, from, or to' });
-    }
+  fastify.post<{ Body: { tokenId: string; from: string; to: string } }>(
+    '/transfer',
+    { preHandler: [requireOnChainRole('ADMIN', 'MANAGER')] },
+    async (req, reply) => {
+      const { tokenId, from, to } = req.body;
+      if (!tokenId || !from || !to) {
+        return reply.status(400).send({ error: 'Missing tokenId, from, or to' });
+      }
 
-    const toDid = formatDidPkh(config.chainId, to);
-    const toDidHash = hashDid(toDid);
+      const toDid = formatDidPkh(config.chainId, to);
+      const toDidHash = hashDid(toDid);
 
-    const nft = getNftContract(adminSigner);
-    if (!config.nftAddress || !nft || !adminSigner) {
-      return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
-    }
+      const nft = getNftContract(adminSigner);
+      if (!config.nftAddress || !nft || !adminSigner) {
+        return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+      }
 
-    try {
-      const tx = await nft.authorizeTransfer(BigInt(tokenId), from, to, toDidHash);
-      await tx.wait();
-      return { success: true, tokenId, from, to, txHash: tx.hash };
-    } catch (err: any) {
-      req.log.error(err);
-      return reply.status(400).send({ error: 'Transfer failed: ' + err.message });
+      try {
+        await nft.authorizeTransfer.staticCall(BigInt(tokenId), from, to, toDidHash);
+        const tx = await nft.authorizeTransfer(BigInt(tokenId), from, to, toDidHash);
+        await tx.wait();
+        return { success: true, tokenId, from, to, txHash: tx.hash };
+      } catch (err: any) {
+        req.log.error(err);
+        return reply.status(400).send({ error: 'Transfer failed: ' + (err.reason || err.shortMessage || err.message) });
+      }
     }
-  });
+  );
 
   // POST /api/assets/retire - Admin retires asset
-  fastify.post<{ Body: { tokenId: string; reason: string } }>('/retire', async (req, reply) => {
-    const { tokenId, reason } = req.body;
-    if (!tokenId || !reason) {
-      return reply.status(400).send({ error: 'Missing tokenId or reason' });
-    }
+  fastify.post<{ Body: { tokenId: string; reason: string } }>(
+    '/retire',
+    { preHandler: [requireOnChainRole('ADMIN')] },
+    async (req, reply) => {
+      const { tokenId, reason } = req.body;
+      if (!tokenId || !reason) {
+        return reply.status(400).send({ error: 'Missing tokenId or reason' });
+      }
 
-    const nft = getNftContract(adminSigner);
-    if (!config.nftAddress || !nft || !adminSigner) {
-      return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
-    }
+      const nft = getNftContract(adminSigner);
+      if (!config.nftAddress || !nft || !adminSigner) {
+        return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
+      }
 
-    try {
-      const tx = await nft.retireAsset(BigInt(tokenId), reason);
-      await tx.wait();
-      return { success: true, tokenId, reason, txHash: tx.hash };
-    } catch (err: any) {
-      req.log.error(err);
-      return reply.status(400).send({ error: 'Retirement failed: ' + err.message });
+      try {
+        await nft.retireAsset.staticCall(BigInt(tokenId), reason);
+        const tx = await nft.retireAsset(BigInt(tokenId), reason);
+        await tx.wait();
+        return { success: true, tokenId, reason, txHash: tx.hash };
+      } catch (err: any) {
+        req.log.error(err);
+        return reply.status(400).send({ error: 'Retirement failed: ' + (err.reason || err.shortMessage || err.message) });
+      }
     }
-  });
+  );
 };
+

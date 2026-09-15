@@ -22,7 +22,7 @@ export default function Assets() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [mintLoading, setMintLoading] = useState(false);
   const [mintError, setMintError] = useState('');
-  const [mintSuccess, setMintSuccess] = useState('');
+  const [mintSuccess, setMintSuccess] = useState(null);
 
   const loadAssetsData = async () => {
     try {
@@ -58,7 +58,7 @@ export default function Assets() {
     }
     setMintLoading(true);
     setMintError('');
-    setMintSuccess('');
+    setMintSuccess(null);
 
     try {
       const res = await mintAsset({
@@ -67,14 +67,17 @@ export default function Assets() {
         metadataURI: description,
         file: selectedFile,
       });
-      setMintSuccess(`Minted successfully! Token #${res.tokenId || '1'} (Tx: ${res.txHash ? res.txHash.slice(0, 16) + '...' : 'local'})`);
+      setMintSuccess({
+        tokenId: res.tokenId,
+        txHash: res.txHash,
+      });
       await loadAssetsData();
       setTimeout(() => {
         setShowMint(false);
-        setMintSuccess('');
+        setMintSuccess(null);
         setDescription('');
         setSelectedFile(null);
-      }, 1500);
+      }, 3500);
     } catch (err) {
       setMintError(err.message || 'Minting failed');
     } finally {
@@ -175,7 +178,13 @@ export default function Assets() {
             )}
             {mintSuccess && (
               <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46' }}>
-                <CheckCircle2 size={16} /> {mintSuccess}
+                <CheckCircle2 size={16} />
+                <span>
+                  Minted Token #{mintSuccess.tokenId || '1'}
+                  {mintSuccess.txHash && (
+                    <> — <a href={`https://amoy.polygonscan.com/tx/${mintSuccess.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600 }}>View Tx on Polygonscan</a></>
+                  )}
+                </span>
               </div>
             )}
 

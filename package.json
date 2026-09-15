@@ -15,7 +15,10 @@
     "dev:workers": "npm --workspace services/workers run dev",
     "dev:indexer": "npm --workspace services/indexer run dev",
     "infra:up": "docker compose -f infra/docker-compose.yml up -d",
-    "infra:down": "docker compose -f infra/docker-compose.yml down"
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "onchain:status": "node scripts/onchain-status.mjs",
+    "onchain:bootstrap": "node scripts/bootstrap-onchain.mjs",
+    "onchain:smoke": "node scripts/onchain-smoke.mjs"
   },
   "devDependencies": {
     "solc": "^0.8.20",

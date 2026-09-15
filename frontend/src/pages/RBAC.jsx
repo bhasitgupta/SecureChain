@@ -43,15 +43,35 @@ const permissions = [
 export default function RBAC() {
   const { wallet: currentWallet, role: currentRole, switchRole } = useAuth();
   const [walletRoles, setWalletRoles] = useState({});
+  const [confirmedRoles, setConfirmedRoles] = useState({});
   const [requests, setRequests] = useState([]);
   const [newAddress, setNewAddress] = useState('');
   const [newRole, setNewRole] = useState('USER');
-  const [toastMsg, setToastMsg] = useState('');
+  const [toast, setToast] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
   const loadData = () => {
-    setWalletRoles(getAllWalletRoles());
+    const roles = getAllWalletRoles();
+    setWalletRoles(roles);
     setRequests(getRoleRequests());
+    verifyOnChainStatus(roles);
+  };
+
+  const verifyOnChainStatus = async (roles) => {
+    const statusMap = {};
+    for (const addr of Object.keys(roles)) {
+      try {
+        const onChain = await checkOnChainRole(addr);
+        if (onChain && onChain === roles[addr]) {
+          statusMap[addr.toLowerCase()] = true;
+        } else {
+          statusMap[addr.toLowerCase()] = false;
+        }
+      } catch {
+        statusMap[addr.toLowerCase()] = false;
+      }
+    }
+    setConfirmedRoles(statusMap);
   };
 
   useEffect(() => {
@@ -67,9 +87,9 @@ export default function RBAC() {
     };
   }, []);
 
-  const showNotification = (msg) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 4500);
+  const showNotification = (message, txHash = null, isError = false) => {
+    setToast({ message, txHash, isError });
+    setTimeout(() => setToast(null), 6000);
   };
 
   const handleSyncOnChain = async () => {
@@ -78,16 +98,21 @@ export default function RBAC() {
     try {
       const current = getAllWalletRoles();
       const updated = { ...current };
+      const statusMap = {};
       for (const addr of Object.keys(current)) {
         const onChain = await checkOnChainRole(addr);
         if (onChain && onChain !== 'USER') {
           updated[addr.toLowerCase()] = onChain;
+          statusMap[addr.toLowerCase()] = true;
+        } else {
+          statusMap[addr.toLowerCase()] = false;
         }
       }
       setWalletRoles(updated);
+      setConfirmedRoles(statusMap);
       showNotification('Synced authoritative roles from Polygon Amoy!');
     } catch (e) {
-      showNotification('Completed registry sync.');
+      showNotification('Completed registry sync with available data.');
     } finally {
       setSyncing(false);
     }
@@ -96,45 +121,25 @@ export default function RBAC() {
   const handleAssignRole = async (e) => {
     e.preventDefault();
     if (!newAddress || !newAddress.startsWith('0x') || newAddress.length < 10) {
-      showNotification('Please enter a valid Ethereum wallet address (0x...)');
+      showNotification('Please enter a valid Ethereum wallet address (0x...)', null, true);
       return;
     }
     const target = newAddress.trim().toLowerCase();
-    setWalletRole(target, newRole);
-    loadData();
 
-    if (currentWallet && currentWallet.toLowerCase() === target) {
-      switchRole(newRole);
-    }
+    showNotification(`Broadcasting ${newRole} role grant to Polygon Amoy...`);
+    try {
+      const res = await grantRoleOnChain(newRole, target);
+      setWalletRole(target, newRole);
+      loadData();
 
-    showNotification(`Assigned role ${newRole} to ${truncateAddress(target)}`);
-    setNewAddress('');
-
-    // Attempt direct on-chain submission with user's Web3 wallet
-    if (window.ethereum) {
-      try {
-        const browserProvider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await browserProvider.getSigner();
-        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
-        const abi = ['function grantRole(bytes32 role, address acct)'];
-        const iam = new ethers.Contract(iamAddr, abi, signer);
-        const roleHash = ROLE_HASHES[newRole];
-        if (roleHash) {
-          const tx = await iam.grantRole(roleHash, target);
-          showNotification(`On-chain tx broadcast: ${truncateAddress(tx.hash)}`);
-          await tx.wait(1);
-          showNotification(`Role ${newRole} confirmed on Polygon Amoy blockchain!`);
-        }
-      } catch (chainErr) {
-        console.warn('MetaMask on-chain submission skipped/unsupported, role saved to registry:', chainErr.message);
-        try {
-          await grantRoleOnChain(newRole, target);
-        } catch {}
+      if (currentWallet && currentWallet.toLowerCase() === target) {
+        switchRole(newRole);
       }
-    } else {
-      try {
-        await grantRoleOnChain(newRole, target);
-      } catch {}
+
+      showNotification(`Granted ${newRole} to ${truncateAddress(target)} on-chain`, res.txHash);
+      setNewAddress('');
+    } catch (err) {
+      showNotification(`Failed to grant role: ${err.message}`, null, true);
     }
   };
 
@@ -144,83 +149,58 @@ export default function RBAC() {
       await handleRevokeRole(target, walletRoles[target] || 'ADMIN');
       return;
     }
-    setWalletRole(target, role);
-    loadData();
 
-    if (currentWallet && currentWallet.toLowerCase() === target) {
-      switchRole(role);
-    }
+    showNotification(`Updating role to ${role} on Polygon Amoy...`);
+    try {
+      const res = await grantRoleOnChain(role, target);
+      setWalletRole(target, role);
+      loadData();
 
-    showNotification(`Updated ${truncateAddress(target)} to ${role}`);
-
-    if (window.ethereum) {
-      try {
-        const browserProvider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await browserProvider.getSigner();
-        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
-        const abi = ['function grantRole(bytes32 role, address acct)'];
-        const iam = new ethers.Contract(iamAddr, abi, signer);
-        const roleHash = ROLE_HASHES[role];
-        if (roleHash) {
-          const tx = await iam.grantRole(roleHash, target);
-          showNotification(`On-chain grant tx broadcast: ${truncateAddress(tx.hash)}`);
-          await tx.wait(1);
-          showNotification(`Confirmed ${role} on Polygon Amoy!`);
-        }
-      } catch (e) {
-        try { await grantRoleOnChain(role, target); } catch {}
+      if (currentWallet && currentWallet.toLowerCase() === target) {
+        switchRole(role);
       }
-    } else {
-      try { await grantRoleOnChain(role, target); } catch {}
+
+      showNotification(`Updated ${truncateAddress(target)} to ${role}`, res.txHash);
+    } catch (err) {
+      showNotification(`Role update failed: ${err.message}`, null, true);
     }
   };
 
   const handleRevokeRole = async (address, role) => {
     const target = address.toLowerCase();
-    removeWalletRole(target);
-    loadData();
+    showNotification(`Revoking ${role} role from Polygon Amoy...`);
+    try {
+      const res = await revokeRoleOnChain(role, target);
+      removeWalletRole(target);
+      loadData();
 
-    if (currentWallet && currentWallet.toLowerCase() === target) {
-      switchRole('USER');
-    }
-
-    showNotification(`Revoked ${role} role from ${truncateAddress(target)}`);
-
-    if (window.ethereum) {
-      try {
-        const browserProvider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await browserProvider.getSigner();
-        const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
-        const abi = ['function revokeRole(bytes32 role, address acct)'];
-        const iam = new ethers.Contract(iamAddr, abi, signer);
-        const roleHash = ROLE_HASHES[role];
-        if (roleHash) {
-          const tx = await iam.revokeRole(roleHash, target);
-          showNotification(`On-chain revoke tx broadcast: ${truncateAddress(tx.hash)}`);
-          await tx.wait(1);
-          showNotification(`Revocation confirmed on Polygon Amoy!`);
-        }
-      } catch (e) {
-        try { await revokeRoleOnChain(role, target); } catch {}
+      if (currentWallet && currentWallet.toLowerCase() === target) {
+        switchRole('USER');
       }
-    } else {
-      try { await revokeRoleOnChain(role, target); } catch {}
+
+      showNotification(`Revoked ${role} from ${truncateAddress(target)} on-chain`, res.txHash);
+    } catch (err) {
+      showNotification(`Role revocation failed: ${err.message}`, null, true);
     }
   };
 
   const handleApprove = async (reqId, address, role) => {
     const target = address.toLowerCase();
-    approveRoleRequest(reqId);
-    loadData();
-
-    if (currentWallet && currentWallet.toLowerCase() === target) {
-      switchRole(role);
-    }
-
-    showNotification(`Approved role ${role} for ${truncateAddress(target)}`);
+    showNotification(`Approving and granting ${role} on-chain...`);
     try {
-      await grantRoleOnChain(role, target);
-    } catch {}
+      const res = await grantRoleOnChain(role, target);
+      approveRoleRequest(reqId);
+      setWalletRole(target, role);
+      loadData();
+
+      if (currentWallet && currentWallet.toLowerCase() === target) {
+        switchRole(role);
+      }
+
+      showNotification(`Approved and granted ${role} for ${truncateAddress(target)}`, res.txHash);
+    } catch (err) {
+      showNotification(`Role approval failed on-chain: ${err.message}`, null, true);
+    }
   };
 
   const handleDecline = (reqId, address) => {
@@ -258,18 +238,27 @@ export default function RBAC() {
         </div>
       </div>
 
-      {toastMsg && (
+      {toast && (
         <div className="card" style={{ 
           marginBottom: 'var(--space-md)', 
-          background: 'rgba(238, 242, 255, 0.9)', 
-          borderColor: 'var(--color-accent-medium)',
+          background: toast.isError ? 'rgba(254, 242, 242, 0.95)' : 'rgba(238, 242, 255, 0.95)', 
+          borderColor: toast.isError ? '#EF4444' : 'var(--color-accent-medium)',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
           padding: '12px 18px'
         }}>
-          <CheckCircle2 size={18} style={{ color: 'var(--status-success)' }} />
-          <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{toastMsg}</span>
+          {toast.isError ? (
+            <XCircle size={18} style={{ color: '#EF4444' }} />
+          ) : (
+            <CheckCircle2 size={18} style={{ color: 'var(--status-success)' }} />
+          )}
+          <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+            {toast.message}
+            {toast.txHash && (
+              <> — <a href={`https://amoy.polygonscan.com/tx/${toast.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: 'var(--color-action)' }}>View on Polygonscan</a></>
+            )}
+          </span>
         </div>
       )}
 
@@ -407,7 +396,11 @@ export default function RBAC() {
                     <span className={`badge role-${assignedR.toLowerCase()}`}>{assignedR}</span>
                   </td>
                   <td>
-                    <span className="badge badge-success">Active On-Chain</span>
+                    {confirmedRoles[addr.toLowerCase()] ? (
+                      <span className="badge badge-success">✔ On-Chain</span>
+                    ) : (
+                      <span className="badge badge-warning">⚠ Cache Only</span>
+                    )}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>

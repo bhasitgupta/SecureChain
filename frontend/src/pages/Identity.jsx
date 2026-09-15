@@ -51,14 +51,17 @@ export default function Identity() {
 
     try {
       const res = await registerIdentity(account, subjectId);
-      setSuccessMsg(`Registered on-chain! DID: ${res.did || 'did:pkh:eip155:80002:' + account.slice(0, 10)} (Tx: ${res.txHash ? res.txHash.slice(0, 12) + '...' : 'confirmed'})`);
+      setSuccessMsg({
+        did: res.did || 'did:pkh:eip155:80002:' + account.slice(0, 10),
+        txHash: res.txHash,
+      });
       await loadIdentities();
       setTimeout(() => {
         setShowModal(false);
-        setSuccessMsg('');
+        setSuccessMsg(null);
         setAccount('');
         setSubjectId('');
-      }, 1500);
+      }, 3500);
     } catch (err) {
       setErrorMsg(err.message || 'Registration failed');
     } finally {
@@ -149,7 +152,13 @@ export default function Identity() {
             )}
             {successMsg && (
               <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46' }}>
-                <CheckCircle2 size={16} /> {successMsg}
+                <CheckCircle2 size={16} />
+                <span>
+                  Registered on-chain! DID: {successMsg.did}
+                  {successMsg.txHash && (
+                    <> — <a href={`https://amoy.polygonscan.com/tx/${successMsg.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600 }}>View Tx on Polygonscan</a></>
+                  )}
+                </span>
               </div>
             )}
 

@@ -12,6 +12,10 @@ import { verifyRoutes } from './routes/verify.js';
 import { recoveryRoutes } from './routes/recovery.js';
 import { auditRoutes } from './routes/audit.js';
 
+import { ethers } from 'ethers';
+import { Roles } from '@sih26125/common';
+import { adminSigner, provider, getIamContract } from './chain.js';
+
 const fastify = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
@@ -20,8 +24,24 @@ const fastify = Fastify({
 
 async function main() {
   // Plugins
+  const envOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const origins = Array.from(
+    new Set([
+      config.frontendUrl,
+      ...envOrigins,
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+    ])
+  );
+
   await fastify.register(cors, {
-    origin: [config.frontendUrl, 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: origins,
     credentials: true,
   });
 
@@ -35,12 +55,43 @@ async function main() {
     },
   });
 
-  // Health check
-  fastify.get('/health', async () => ({
-    status: 'ok',
-    service: 'sih26125-gateway',
-    timestamp: new Date().toISOString(),
-  }));
+  // Health check with on-chain diagnostics
+  fastify.get('/health', async () => {
+    let relayerData: any = null;
+    if (adminSigner) {
+      try {
+        const [balance, iam] = await Promise.all([
+          provider.getBalance(adminSigner.address),
+          Promise.resolve(getIamContract(provider)),
+        ]);
+        const isAdmin = iam ? await iam.hasRole(Roles.ADMIN, adminSigner.address) : false;
+        relayerData = {
+          address: adminSigner.address,
+          balance: ethers.formatEther(balance),
+          isAdmin,
+        };
+      } catch (err: any) {
+        relayerData = {
+          address: adminSigner.address,
+          error: err.message,
+        };
+      }
+    }
+
+    return {
+      status: 'ok',
+      service: 'sih26125-gateway',
+      chainId: config.chainId,
+      contracts: {
+        iam: config.iamAddress,
+        nft: config.nftAddress,
+        anchor: config.anchorAddress,
+        recovery: config.recoveryAddress,
+      },
+      relayer: relayerData,
+      timestamp: new Date().toISOString(),
+    };
+  });
 
   // Route registration
   await fastify.register(authRoutes, { prefix: '/api/auth' });
