@@ -1,18 +1,23 @@
 <div align="center">
 
-<img src="./Docs/assets/banner.jpg" alt="SecureChain Anime Hero Banner" width="100%" style="border-radius: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);" />
+![SecureChain Hero Banner](assets/hero-banner.svg)
 
 # ⚡ SECURECHAIN (SIH-26125)
 ### *Next-Generation Zero-Knowledge Enterprise Identity, Verifiable Asset Ownership & Document Provenance Engine*
 
-[![Polygon Amoy](https://img.shields.io/badge/Network-Polygon_Amoy_80002-8247E5?style=for-the-badge&logo=polygon&logoColor=white)](https://amoy.polygonscan.com)
-[![Solidity](https://img.shields.io/badge/Solidity-0.8.20-363636?style=for-the-badge&logo=solidity&logoColor=white)](https://soliditylang.org/)
-[![Fastify](https://img.shields.io/badge/Backend-Fastify_v5-000000?style=for-the-badge&logo=fastify&logoColor=white)](https://fastify.dev/)
-[![React](https://img.shields.io/badge/Frontend-React_19_Vite-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://vitejs.dev/)
-[![MinIO](https://img.shields.io/badge/Storage-MinIO_S3-C72C48?style=for-the-badge&logo=minio&logoColor=white)](https://min.io/)
-[![Redis](https://img.shields.io/badge/Queue-Redis_BullMQ-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
-[![Docker](https://img.shields.io/badge/Infra-Docker_Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-MIT-00E676?style=for-the-badge)](./LICENSE)
+[![Typing SVG](https://readme-typing-svg.herokuapp.com?font=Fira+Code&pause=1000&color=DC2626&center=true&vCenter=true&width=650&lines=Zero-Knowledge+Enterprise+Identity;Cryptographic+Document+Provenance;Immutable+Merkle+Roots+on+Polygon+Amoy;ERC-721+Monitored+Asset+NFTs;Cryptographic+RBAC+Governance)](https://github.com/bhasitgupta/SIH-26125)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Network-Polygon_Amoy_80002-8247E5?style=flat-square&logo=polygon&logoColor=white" alt="Polygon Amoy">
+  <img src="https://img.shields.io/badge/Solidity-0.8.20-363636?style=flat-square&logo=solidity&logoColor=white" alt="Solidity">
+  <img src="https://img.shields.io/badge/Backend-Fastify_v5-000000?style=flat-square&logo=fastify&logoColor=white" alt="Fastify">
+  <img src="https://img.shields.io/badge/Frontend-React_19_Vite-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React">
+  <img src="https://img.shields.io/badge/Storage-MinIO_S3-C72C48?style=flat-square&logo=minio&logoColor=white" alt="MinIO">
+  <img src="https://img.shields.io/badge/Queue-Redis_BullMQ-DC382D?style=flat-square&logo=redis&logoColor=white" alt="Redis">
+  <img src="https://img.shields.io/badge/Infra-Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/License-MIT-00E676?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/badge/Security-Policy_Active-DC2626?style=flat-square&logo=shield" alt="Security Policy">
+</p>
 
 <p align="center">
   <b>🔒 Confidential Storage</b> • <b>🌲 SHA-256 Merkle Batches</b> • <b>🛡️ W3C DID PKH</b> • <b>💎 Monotonic ERC-721 Assets</b> • <b>🔑 Social Recovery</b>
@@ -148,17 +153,25 @@ npm run dev:indexer
 
 ## 🔑 Initial Admin Wallet Allocation
 
-To grant administrative authority over the contract suite and initial NFT allocation:
+The contract suite and governance system enforce strict administrative authority:
 
 ```json
 {
   "ADMIN_ROLE": [
-    "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
-    "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+    "0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c",
+    "0xFF00D19Db6668537116Ecda91ac07Fa448A2223e"
   ]
 }
 ```
-*Tip: Additional admin addresses can be designated directly in the `.env` file or assigned dynamically through the built-in **Access Control (RBAC)** control panel.*
+*Note: Roles are bound cryptographically to wallet addresses. To assign or revoke roles, use the **Access Control (RBAC)** portal (`/rbac`). Full role mechanics are specified in [Docs/ROLE_MANAGEMENT_GUIDE.md](Docs/ROLE_MANAGEMENT_GUIDE.md).*
+
+---
+
+## 📚 Governance & Security Documentation
+
+- 🛡️ [`SECURITY.md`](SECURITY.md) — Responsible disclosure policy & contact guidelines
+- 📜 [`Docs/ROLE_MANAGEMENT_GUIDE.md`](Docs/ROLE_MANAGEMENT_GUIDE.md) — RBAC authority matrix, permission tiers, and wallet assignment guide
+- 📐 [`Docs/TRD.md`](Docs/TRD.md) — Technical Requirements Document & Reference Architecture
 
 ---
 
@@ -166,12 +179,13 @@ To grant administrative authority over the contract suite and initial NFT alloca
 
 ```
 SIH-26125/
+├── assets/                  # Hero vector banners, circuit art & animated dividers
 ├── contracts/               # Solidity 0.8.20 Smart Contracts
 │   ├── src/                 # Core contract implementations
 │   └── script/              # Deployment automation scripts
-├── frontend/                # Ultra-Responsive Cyberpunk React SPA (Vite)
+├── frontend/                # High-Performance Cyberpunk React SPA (Vite)
 │   ├── src/pages/           # Dashboard, RBAC, Assets, Verification, Documents
-│   ├── src/components/      # Reusable HUD elements & Animated Borders
+│   ├── src/components/      # Reusable HUD elements & Role-Bound Guards
 │   └── src/lib/api.js       # Fastify Gateway integration client
 ├── services/
 │   ├── gateway/             # Fastify REST microservice API
@@ -187,5 +201,25 @@ SIH-26125/
 ---
 
 <div align="center">
-  <sub>Built with 💜 for Smart India Hackathon (SIH-26125) • Secured by Polygon Amoy</sub>
+
+  <img src="assets/section-divider.svg" alt="section divider" width="80%">
+
+  <br>
+
+  <h3>⚡ SIH-26125 — Immutably Anchored. Forever Provable.</h3>
+
+  <p>
+    <a href="https://github.com/bhasitgupta/SIH-26125"><img src="https://img.shields.io/badge/GitHub-bhasitgupta%2FSIH--26125-000000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
+    <a href="mailto:bhasitgupta@gmail.com"><img src="https://img.shields.io/badge/Contact-Email-3B82F6?style=for-the-badge&logo=gmail&logoColor=white" alt="Email"></a>
+    <a href="SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-DC2626?style=for-the-badge&logo=shield&logoColor=white" alt="Security Policy"></a>
+  </p>
+
+  <p>
+    <a href="#-securechain-sih-26125"><img src="https://img.shields.io/badge/Back_to_Top-%E2%96%B2-0B0E14?style=for-the-badge" alt="Back to top"></a>
+  </p>
+
+  <p>⭐ If you find this project useful, <b>give it a star</b>!</p>
+
+  <sub>© 2026 SIH-26125 (SecureChain) · Immutably anchored. Forever provable. ⚡</sub>
+
 </div>
