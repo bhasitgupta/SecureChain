@@ -1,0 +1,82 @@
+.upload-zone {
+  border: 2px dashed var(--color-accent-medium);
+  border-radius: var(--radius-md);
+  padding: var(--space-2xl) var(--space-xl);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  background: var(--color-accent-soft);
+  margin-bottom: var(--space-md);
+}
+
+.upload-zone:hover, .upload-zone-active {
+  border-color: var(--color-action);
+  background: var(--color-action-light);
+}
+
+.upload-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.doc-detail-panel {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--space-xl);
+}
+
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.version-item {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.version-dot-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.version-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-accent-medium);
+  border: 2px solid var(--color-base-white);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.version-dot-latest {
+  background: var(--color-action);
+  box-shadow: 0 0 0 3px var(--color-action-light);
+}
+
+.version-line {
+  width: 2px;
+  flex: 1;
+  background: var(--color-accent-medium);
+  margin: 2px 0;
+}
+
+.version-content {
+  flex: 1;
+  margin-bottom: var(--space-md);
+}

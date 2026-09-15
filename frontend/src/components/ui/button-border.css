@@ -1,0 +1,53 @@
+/* ── Animated Border Runner ── */
+
+.animated-border-wrapper {
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1.5px solid transparent;
+  overflow: hidden;
+  z-index: 1;
+  -webkit-mask-clip: padding-box, border-box;
+  mask-clip: padding-box, border-box;
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+  -webkit-mask-image: linear-gradient(transparent, transparent), linear-gradient(#000, #000);
+  mask-image: linear-gradient(transparent, transparent), linear-gradient(#000, #000);
+}
+
+.animated-border-runner {
+  position: absolute;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  filter: blur(0.5px);
+}
+
+/* UI Button variants */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  border: 1px solid transparent;
+}
+
+.ui-btn-outline {
+  background: var(--color-base-white, #FFFFFF);
+  border-color: rgba(187, 213, 218, 0.6);
+  color: var(--text-primary, #1A2426);
+}
+
+.ui-btn-outline:hover {
+  background: rgba(223, 241, 241, 0.4);
+}
+
+.ui-btn-default {
+  height: 40px;
+  padding: 0 16px;
+}

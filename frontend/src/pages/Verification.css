@@ -1,0 +1,115 @@
+.spin { animation: spin 1s linear infinite; }
+
+.verify-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-lg);
+  animation: fadeInScale 0.3s ease-out;
+}
+
+.verify-result-valid {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--status-success);
+}
+
+.verify-result-invalid {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--status-error);
+}
+
+.verify-result-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.verify-result-desc {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+.verify-pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.verify-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  position: relative;
+  transition: all var(--transition-base);
+}
+
+.verify-step-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--color-accent-soft);
+  color: var(--text-tertiary);
+  transition: all var(--transition-base);
+}
+
+.verify-step-active .verify-step-icon {
+  background: var(--color-action-light);
+  color: var(--color-action);
+  animation: ripple 1.5s ease-out infinite;
+}
+
+.verify-step-done .verify-step-icon {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--status-success);
+}
+
+.verify-step-label {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.verify-step-desc {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.verify-step-connector {
+  position: absolute;
+  left: 19px;
+  top: calc(var(--space-md) + 40px);
+  width: 2px;
+  height: calc(100% - 40px - var(--space-md));
+  background: var(--color-accent-medium);
+}
+
+.verify-step-done + .verify-step .verify-step-connector,
+.verify-step-done .verify-step-connector {
+  background: var(--status-success);
+}
+
+.verify-proof-details {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--card-border);
+  animation: fadeIn 0.4s ease-out;
+}
+
+.proof-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(187, 213, 218, 0.15);
+  font-size: 0.8rem;
+}
+
+.proof-row:last-child { border-bottom: none; }

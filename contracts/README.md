@@ -1,16 +1,18 @@
 # SIH26125 — Smart Contract Suite (Consolidated)
 
-4 contracts. Solidity ^0.8.20. Zero external dependencies.
+4 contracts. Solidity 0.8.26. Zero external dependencies.
 
 ## Structure
 
 ```text
 contracts/
-└── src/
-    ├── IdentityAndAccessManager.sol   ← DID registry + RBAC + permissions
-    ├── EnterpriseAssetNFT.sol         ← ERC-721 + governance (mint/allocate/transfer/retire)
-    ├── DocumentAnchorRegistry.sol     ← Merkle root anchoring + inclusion verification
-    └── RecoveryManager.sol            ← Provider registry + ERC-7947 recovery + timelock
+├── src/
+│   ├── IdentityAndAccessManager.sol   ← DID registry + RBAC + permissions
+│   ├── EnterpriseAssetNFT.sol         ← ERC-721 + governance (mint/allocate/transfer/retire)
+│   ├── DocumentAnchorRegistry.sol     ← Merkle root anchoring + inclusion verification
+│   └── RecoveryManager.sol            ← Provider registry + ERC-7947 recovery + timelock
+└── script/
+    └── DeployAll.sol                  ← Deploy orchestrator
 ```
 
 ## Contract Map

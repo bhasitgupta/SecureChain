@@ -1,0 +1,101 @@
+.uid-login {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.uid-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.uid-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.uid-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.uid-input-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.uid-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-base);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  transition: border-color var(--transition-fast);
+}
+
+.uid-input:focus {
+  outline: none;
+  border-color: var(--color-accent-medium);
+}
+
+.uid-toggle-pwd {
+  position: absolute;
+  right: 8px;
+  padding: 4px;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color var(--transition-fast);
+}
+
+.uid-toggle-pwd:hover {
+  color: var(--text-primary);
+}
+
+.uid-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 0, 0, 0.06);
+  border: 1px solid rgba(255, 0, 0, 0.2);
+  color: var(--color-action);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.uid-error svg { flex-shrink: 0; margin-top: 1px; }
+
+.uid-submit-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.uid-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.uid-forgot {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}

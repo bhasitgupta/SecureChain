@@ -1,0 +1,12 @@
+.asset-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.asset-token-id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}

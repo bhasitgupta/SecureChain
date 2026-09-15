@@ -1,0 +1,28 @@
+/* ── App Layout — Light Luxury ── */
+
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--color-base);
+  position: relative;
+  overflow-x: hidden;
+}
+
+.app-main {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left var(--transition-base);
+  background-color: var(--color-base);
+}
+
+.sidebar-collapsed + .app-main {
+  margin-left: var(--sidebar-collapsed);
+}
+
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+}

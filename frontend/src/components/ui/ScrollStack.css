@@ -1,0 +1,340 @@
+/* ── React Bits ScrollStack Styles ── */
+.scroll-stack-scroller {
+  position: relative;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.scroll-stack-scroller.scroll-stack-window-mode {
+  overflow: visible;
+  height: auto;
+  max-width: 1080px;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+.scroll-stack-inner {
+  position: relative;
+  width: 100%;
+  padding-bottom: 25vh;
+  box-sizing: border-box;
+}
+
+.scroll-stack-card {
+  transform-origin: top center;
+  will-change: transform, filter;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  width: 100%;
+  margin: 0 auto 80px auto;
+  border-radius: 28px;
+  box-sizing: border-box;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  position: relative;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.scroll-stack-end {
+  width: 100%;
+  height: 40px;
+}
+
+/* ── Full Second-Page Stacked Card Styles ── */
+.lex-page-card {
+  position: relative;
+  width: 100%;
+  padding: 44px 40px;
+  border-radius: 28px;
+  background: rgba(248, 250, 252, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(203, 213, 225, 0.85);
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.07);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: border-color 0.3s ease;
+}
+
+.lex-page-card:hover {
+  border-color: rgba(148, 163, 184, 0.95);
+}
+
+.lex-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  padding-bottom: 16px;
+}
+
+.lex-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-slate-600, #475569);
+}
+
+.lex-card-tag-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-action, #FF0000);
+}
+
+.lex-card-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  background: rgba(187, 213, 218, 0.25);
+  color: #0F172A;
+  border: 1px solid rgba(187, 213, 218, 0.7);
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+}
+
+/* Card 1: Security Core & Manifesto */
+.lex-card-centerpiece {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 24px 0 32px 0;
+}
+
+.lex-card-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11vw;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: rgba(187, 213, 218, 0.25);
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.lex-card-side-left {
+  flex: 1;
+  max-width: 300px;
+  z-index: 2;
+}
+
+.lex-card-side-left p {
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--text-secondary, #475569);
+  line-height: 1.6;
+  border-left: 2px solid var(--color-action, #FF0000);
+  padding-left: 14px;
+}
+
+.lex-card-emblem-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.lex-card-emblem-img {
+  width: 140px;
+  height: 140px;
+  object-fit: contain;
+  filter: drop-shadow(0 16px 32px rgba(26, 36, 38, 0.12));
+}
+
+.lex-card-side-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  z-index: 2;
+}
+
+.lex-card-manifesto {
+  position: relative;
+  z-index: 2;
+  margin-top: 20px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  text-align: center;
+}
+
+.lex-card-manifesto-text {
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--text-secondary, #475569);
+  letter-spacing: -0.01em;
+}
+
+.lex-card-manifesto-text .highlight {
+  color: var(--text-primary, #0F172A);
+  font-weight: 700;
+}
+
+/* Card 2: 3 Architecture Pillars inside Card 2 */
+.lex-pillars-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 12px;
+}
+
+.lex-pillar-box {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(203, 213, 225, 0.75);
+  border-radius: 18px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  position: relative;
+  transition: all 0.25s ease;
+}
+
+.lex-pillar-box:hover {
+  transform: translateY(-3px);
+  border-color: rgba(148, 163, 184, 0.95);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.lex-pillar-num {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--color-slate-500, #64748B);
+  margin-bottom: 8px;
+}
+
+.lex-pillar-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--color-slate-900, #0F172A);
+  margin-bottom: 10px;
+  letter-spacing: -0.02em;
+}
+
+.lex-pillar-desc {
+  font-size: 0.85rem;
+  color: var(--color-slate-600, #475569);
+  line-height: 1.55;
+}
+
+/* Card 3: Metrics & Trust Strip */
+.lex-card-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.lex-card-metric-cell {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(203, 213, 225, 0.75);
+  border-radius: 18px;
+  padding: 24px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+}
+
+.lex-card-metric-cell:hover {
+  transform: translateY(-3px);
+  border-color: rgba(148, 163, 184, 0.95);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.lex-card-metric-val {
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: var(--color-slate-900, #0F172A);
+  letter-spacing: -0.04em;
+  margin-bottom: 6px;
+}
+
+.lex-card-metric-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-slate-600, #475569);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lex-card-metric-sub {
+  font-size: 0.72rem;
+  color: var(--color-slate-500, #64748B);
+  margin-top: 4px;
+}
+
+.lex-card-footer-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.lex-card-footer-info {
+  font-size: 0.85rem;
+  color: var(--color-slate-600, #475569);
+  font-weight: 500;
+}
+
+.lex-card-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  background: var(--text-primary, #0F172A);
+  color: #FFFFFF;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.lex-card-footer-btn:hover {
+  background: var(--color-action, #FF0000);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 0, 0, 0.25);
+}
+
+@media (max-width: 900px) {
+  .lex-pillars-grid {
+    grid-template-columns: 1fr;
+  }
+  .lex-card-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .lex-card-centerpiece {
+    flex-direction: column;
+    text-align: center;
+  }
+  .lex-card-side-right {
+    align-items: center;
+  }
+}
