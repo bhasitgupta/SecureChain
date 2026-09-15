@@ -3,7 +3,9 @@ import { config } from './config.js';
 import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
 
 export const provider = new ethers.JsonRpcProvider(
-  config.polygonRpcUrl || 'https://polygon-amoy.drpc.org'
+  config.polygonRpcUrl || 'https://polygon-amoy.drpc.org',
+  undefined,
+  { batchMaxCount: 1 }
 );
 
 export const adminSigner = config.adminPrivateKey

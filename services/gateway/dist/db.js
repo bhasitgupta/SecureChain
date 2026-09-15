@@ -13,6 +13,7 @@ exports.pool = new Pool({
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
+    ssl: config_js_1.config.databaseUrl.includes('supabase') ? { rejectUnauthorized: false } : undefined,
 });
 async function query(text, params) {
     const start = Date.now();

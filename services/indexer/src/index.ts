@@ -8,7 +8,11 @@ import {
 import { config } from './config.js';
 import { query } from './db.js';
 
-const provider = new ethers.JsonRpcProvider(config.polygonRpcUrl);
+const provider = new ethers.JsonRpcProvider(
+  config.polygonRpcUrl || 'https://polygon-amoy.drpc.org',
+  undefined,
+  { batchMaxCount: 1 }
+);
 
 console.log('🔍 SIH26125 Blockchain Indexer starting...');
 

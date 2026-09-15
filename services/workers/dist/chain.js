@@ -4,7 +4,7 @@ exports.getAnchorContract = exports.adminSigner = exports.provider = void 0;
 const ethers_1 = require("ethers");
 const config_js_1 = require("./config.js");
 const contracts_1 = require("@sih26125/contracts");
-exports.provider = new ethers_1.ethers.JsonRpcProvider(config_js_1.config.polygonRpcUrl || 'https://polygon-amoy.drpc.org');
+exports.provider = new ethers_1.ethers.JsonRpcProvider(config_js_1.config.polygonRpcUrl || 'https://polygon-amoy.drpc.org', undefined, { batchMaxCount: 1 });
 exports.adminSigner = config_js_1.config.adminPrivateKey
     ? new ethers_1.ethers.Wallet(config_js_1.config.adminPrivateKey, exports.provider)
     : null;

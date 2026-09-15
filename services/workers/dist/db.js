@@ -11,6 +11,7 @@ const { Pool } = pg_1.default;
 exports.pool = new Pool({
     connectionString: config_js_1.config.databaseUrl,
     max: 10,
+    ssl: config_js_1.config.databaseUrl.includes('supabase') ? { rejectUnauthorized: false } : undefined,
 });
 async function query(text, params) {
     return exports.pool.query(text, params);

@@ -4,7 +4,7 @@ const ethers_1 = require("ethers");
 const contracts_1 = require("@sih26125/contracts");
 const config_js_1 = require("./config.js");
 const db_js_1 = require("./db.js");
-const provider = new ethers_1.ethers.JsonRpcProvider(config_js_1.config.polygonRpcUrl);
+const provider = new ethers_1.ethers.JsonRpcProvider(config_js_1.config.polygonRpcUrl || 'https://polygon-amoy.drpc.org', undefined, { batchMaxCount: 1 });
 console.log('🔍 SIH26125 Blockchain Indexer starting...');
 async function getCheckpoint(contractAddress) {
     const res = await (0, db_js_1.query)(`SELECT last_block FROM indexer_checkpoints WHERE contract_address = $1`, [contractAddress.toLowerCase()]);
