@@ -450,3 +450,100 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+/* ── Mobile Hamburger Toggle ── */
+.topbar-hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--color-base);
+  border: 1px solid rgba(187, 213, 218, 0.5);
+  color: var(--text-primary);
+  cursor: pointer;
+  margin-right: 12px;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.topbar-hamburger-btn:hover {
+  background: rgba(187, 213, 218, 0.25);
+  color: var(--color-action);
+}
+
+/* ── Tablet Breakpoint (1024px and below) ── */
+@media (max-width: 1024px) {
+  .topbar {
+    padding: 0 var(--space-md);
+  }
+
+  .topbar-hamburger-btn {
+    display: flex;
+  }
+}
+
+/* ── Mobile Phone Breakpoint (768px and below) ── */
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 12px;
+    height: 56px;
+  }
+
+  .context-prefix, .context-sep {
+    display: none;
+  }
+
+  .context-page {
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .topbar-right {
+    gap: 8px;
+  }
+
+  .topbar-role-badge-static {
+    padding: 4px 8px;
+    gap: 4px;
+  }
+
+  .role-badge {
+    font-size: 0.625rem;
+  }
+
+  .topbar-wallet-btn {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .wallet-addr {
+    font-size: 0.725rem;
+  }
+
+  .wallet-auth-method {
+    display: none;
+  }
+
+  .notif-dropdown {
+    position: fixed;
+    top: calc(56px + 8px);
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-width: 380px;
+    margin-left: auto;
+  }
+}
+
+/* ── Ultra-Compact Phone (420px and below) ── */
+@media (max-width: 420px) {
+  .role-icon {
+    display: none;
+  }
+
+  .topbar-wallet-btn .wallet-chevron {
+    display: none;
+  }
+}

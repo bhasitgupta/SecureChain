@@ -590,3 +590,46 @@
     font-size: 1.25rem;
   }
 }
+
+@media (max-width: 600px) {
+  .lex-nav-container {
+    padding: 12px 16px;
+  }
+  .lex-brand-title {
+    font-size: 1.1rem;
+  }
+  .lex-nav-cta {
+    padding: 8px 14px;
+    font-size: 0.775rem;
+  }
+  .lex-hero {
+    padding: 36px 14px 40px 14px;
+  }
+  .lex-hero-title {
+    font-size: clamp(1.6rem, 7.5vw, 2.1rem);
+    letter-spacing: -0.02em;
+  }
+  .lex-hero-tagline {
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+  }
+  .lex-manifesto {
+    padding: 40px 16px;
+  }
+  .lex-manifesto-text {
+    font-size: 1.05rem;
+    line-height: 1.55;
+  }
+  .lex-centerpiece-card {
+    padding: 24px 16px;
+  }
+  .lex-metrics {
+    padding: 20px 16px;
+  }
+  .lex-metric-val {
+    font-size: 1.8rem;
+  }
+  .lex-scroll-section {
+    padding: 40px 14px;
+  }
+}

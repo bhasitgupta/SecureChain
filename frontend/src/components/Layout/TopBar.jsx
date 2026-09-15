@@ -1,6 +1,6 @@
 import { useAuth } from '../../context/AuthContext';
 import { truncateAddress } from '../../utils/formatters';
-import { Wallet, Bell, ChevronDown, LogOut, User, ShieldCheck, CheckCheck, Clock, ShieldAlert, FileCheck2, Database } from 'lucide-react';
+import { Wallet, Bell, ChevronDown, LogOut, User, ShieldCheck, CheckCheck, Clock, ShieldAlert, FileCheck2, Database, Menu } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import './TopBar.css';
 import { useState, useRef, useEffect } from 'react';
@@ -44,7 +44,7 @@ const INITIAL_NOTIFICATIONS = [
   },
 ];
 
-export default function TopBar() {
+export default function TopBar({ onToggleSidebar }) {
   const { wallet, role, isConnected, disconnect, authMethod, uid } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -78,6 +78,16 @@ export default function TopBar() {
   return (
     <header className="topbar">
       <div className="topbar-left">
+        {onToggleSidebar && (
+          <button 
+            className="topbar-hamburger-btn" 
+            onClick={onToggleSidebar}
+            aria-label="Toggle navigation drawer"
+            title="Toggle navigation"
+          >
+            <Menu size={18} />
+          </button>
+        )}
         <div className="topbar-context">
           <span className="context-prefix">SecureChain</span>
           <span className="context-sep">/</span>

@@ -227,3 +227,26 @@
 .chain-block:last-child::after {
   display: none;
 }
+
+@media (max-width: 640px) {
+  .anchor-stats {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .pipeline {
+    gap: 16px;
+  }
+  .pipeline-line {
+    display: none;
+  }
+  .pipeline-step {
+    min-width: 100%;
+    flex-direction: row;
+    align-items: center;
+    text-align: left;
+    gap: 12px;
+  }
+  .pipeline-label {
+    text-align: left;
+  }
+}

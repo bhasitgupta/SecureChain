@@ -16,13 +16,19 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     camera.position.z = 80;
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ 
+      alpha: true, 
+      antialias: window.devicePixelRatio < 2, // antialias on standard res, native crisp on retina
+      powerPreference: 'high-performance',
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     container.appendChild(renderer.domElement);
 
     // 2. Cryptographic Geometric Node (Outer Wireframe Icosahedron)
-    const icoGeom = new THREE.IcosahedronGeometry(18, 1);
+    const isMobile = window.innerWidth < 768;
+    const icoSize = isMobile ? 13 : 18;
+    const icoGeom = new THREE.IcosahedronGeometry(icoSize, 1);
     const icoMat = new THREE.MeshBasicMaterial({
       color: 0xBBD5DA,
       wireframe: true,
@@ -33,7 +39,7 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     scene.add(icosahedron);
 
     // Inner Red Accent Core
-    const innerGeom = new THREE.OctahedronGeometry(9, 0);
+    const innerGeom = new THREE.OctahedronGeometry(isMobile ? 6 : 9, 0);
     const innerMat = new THREE.MeshBasicMaterial({
       color: 0xFF0000,
       wireframe: true,
@@ -43,8 +49,8 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     const innerCore = new THREE.Mesh(innerGeom, innerMat);
     scene.add(innerCore);
 
-    // 3. Floating Network Particle Constellation
-    const particleCount = 75;
+    // 3. Floating Network Particle Constellation (Optimized count for screen size)
+    const particleCount = isMobile ? 32 : (window.innerWidth < 1200 ? 50 : 75);
     const positions = new Float32Array(particleCount * 3);
     const velocities = [];
 
@@ -54,9 +60,9 @@ export default function ThreeBackground({ opacity = 0.65 }) {
       positions[i * 3 + 2] = (Math.random() - 0.5) * 60;
 
       velocities.push({
-        x: (Math.random() - 0.5) * 0.04,
-        y: (Math.random() - 0.5) * 0.04,
-        z: (Math.random() - 0.5) * 0.04,
+        x: (Math.random() - 0.5) * 0.035,
+        y: (Math.random() - 0.5) * 0.035,
+        z: (Math.random() - 0.5) * 0.035,
       });
     }
 
@@ -65,7 +71,7 @@ export default function ThreeBackground({ opacity = 0.65 }) {
 
     const particleMat = new THREE.PointsMaterial({
       color: 0x1B2B2F,
-      size: 1.6,
+      size: isMobile ? 1.8 : 1.6,
       transparent: true,
       opacity: 0.45,
     });
@@ -73,17 +79,23 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     const particles = new THREE.Points(particleGeom, particleMat);
     scene.add(particles);
 
-    // Connecting Lines Material
+    // Connecting Lines Material & Static Pre-allocated Buffer (Zero GC stutter)
+    const maxLineSegments = particleCount * 6;
+    const maxLineVertices = maxLineSegments * 2;
+    const linePositions = new Float32Array(maxLineVertices * 3);
+    const lineGeom = new THREE.BufferGeometry();
+    lineGeom.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    lineGeom.setDrawRange(0, 0);
+
     const lineMat = new THREE.LineBasicMaterial({
       color: 0xBBD5DA,
       transparent: true,
       opacity: 0.25,
     });
-    const lineGeom = new THREE.BufferGeometry();
     const lineMesh = new THREE.LineSegments(lineGeom, lineMat);
     scene.add(lineMesh);
 
-    // 4. Mouse Parallax Tracker
+    // 4. Mouse Parallax Tracker (Throttled / Passive)
     let targetMouseX = 0;
     let targetMouseY = 0;
     let currentMouseX = 0;
@@ -95,31 +107,43 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     };
     window.addEventListener('mousemove', onMouseMove, { passive: true });
 
-    // 5. Animation Loop
+    // 5. Animation Loop with Visibility Pause
     let animId;
-    const linePositions = new Float32Array(particleCount * particleCount * 6);
+    let isTabVisible = !document.hidden;
+
+    const onVisibilityChange = () => {
+      isTabVisible = !document.hidden;
+      if (isTabVisible) {
+        animate();
+      } else {
+        cancelAnimationFrame(animId);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const animate = () => {
+      if (!isTabVisible) return;
       animId = requestAnimationFrame(animate);
 
       // Smooth mouse lerp
-      currentMouseX += (targetMouseX - currentMouseX) * 0.05;
-      currentMouseY += (targetMouseY - currentMouseY) * 0.05;
+      currentMouseX += (targetMouseX - currentMouseX) * 0.045;
+      currentMouseY += (targetMouseY - currentMouseY) * 0.045;
 
-      camera.position.x = currentMouseX * 6;
-      camera.position.y = -currentMouseY * 6;
+      camera.position.x = currentMouseX * 5;
+      camera.position.y = -currentMouseY * 5;
       camera.lookAt(scene.position);
 
       // Rotate geometric core
-      icosahedron.rotation.x += 0.0018;
-      icosahedron.rotation.y += 0.0028;
-      innerCore.rotation.x -= 0.0025;
-      innerCore.rotation.y -= 0.0035;
+      icosahedron.rotation.x += 0.0016;
+      icosahedron.rotation.y += 0.0024;
+      innerCore.rotation.x -= 0.0022;
+      innerCore.rotation.y -= 0.0032;
 
       // Update particle positions
       const posAttr = particleGeom.attributes.position;
       const posArray = posAttr.array;
       let lineIndex = 0;
+      const linePosArray = lineGeom.attributes.position.array;
 
       for (let i = 0; i < particleCount; i++) {
         posArray[i * 3] += velocities[i].x;
@@ -132,45 +156,56 @@ export default function ThreeBackground({ opacity = 0.65 }) {
         if (Math.abs(posArray[i * 3 + 2]) > 35) velocities[i].z *= -1;
 
         // Form network lines between close particles
+        const distLimit = isMobile ? 18 : 22;
         for (let j = i + 1; j < particleCount; j++) {
+          if (lineIndex >= maxLineVertices * 3 - 6) break;
+
           const dx = posArray[i * 3] - posArray[j * 3];
           const dy = posArray[i * 3 + 1] - posArray[j * 3 + 1];
           const dz = posArray[i * 3 + 2] - posArray[j * 3 + 2];
-          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const distSq = dx * dx + dy * dy + dz * dz;
 
-          if (dist < 22) {
-            linePositions[lineIndex++] = posArray[i * 3];
-            linePositions[lineIndex++] = posArray[i * 3 + 1];
-            linePositions[lineIndex++] = posArray[i * 3 + 2];
-            linePositions[lineIndex++] = posArray[j * 3];
-            linePositions[lineIndex++] = posArray[j * 3 + 1];
-            linePositions[lineIndex++] = posArray[j * 3 + 2];
+          if (distSq < distLimit * distLimit) {
+            linePosArray[lineIndex++] = posArray[i * 3];
+            linePosArray[lineIndex++] = posArray[i * 3 + 1];
+            linePosArray[lineIndex++] = posArray[i * 3 + 2];
+            linePosArray[lineIndex++] = posArray[j * 3];
+            linePosArray[lineIndex++] = posArray[j * 3 + 1];
+            linePosArray[lineIndex++] = posArray[j * 3 + 2];
           }
         }
       }
 
       posAttr.needsUpdate = true;
-      lineGeom.setAttribute('position', new THREE.BufferAttribute(linePositions.subarray(0, lineIndex), 3));
+      lineGeom.attributes.position.needsUpdate = true;
+      lineGeom.setDrawRange(0, lineIndex / 3);
 
       renderer.render(scene, camera);
     };
 
     animate();
 
-    // 6. Resize Handler
+    // 6. Resize Handler (Passive & Debounced)
+    let resizeTimer;
     const handleResize = () => {
-      const w = container.clientWidth || window.innerWidth;
-      const h = container.clientHeight || window.innerHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const w = container.clientWidth || window.innerWidth;
+        const h = container.clientHeight || window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      }, 100);
     };
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', handleResize, { passive: true });
 
     return () => {
       cancelAnimationFrame(animId);
+      clearTimeout(resizeTimer);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (container && renderer.domElement) {
         container.removeChild(renderer.domElement);
       }
@@ -196,6 +231,8 @@ export default function ThreeBackground({ opacity = 0.65 }) {
         zIndex: 0,
         opacity: opacity,
         overflow: 'hidden',
+        contain: 'strict',
+        transform: 'translateZ(0)',
       }}
       aria-hidden="true"
     />

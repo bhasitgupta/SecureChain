@@ -11,6 +11,7 @@ import Verification from './pages/Verification';
 import Audit from './pages/Audit';
 import Recovery from './pages/Recovery';
 import Settings from './pages/Settings';
+import useLenis from './hooks/useLenis';
 
 function ProtectedRoute({ children }) {
   const { isConnected, loading } = useAuth();
@@ -34,6 +35,9 @@ function RoleRoute({ roles, children }) {
 }
 
 function AppRoutes() {
+  // Initialize butter-smooth momentum scrolling
+  useLenis();
+
   return (
     <Routes>
       <Route path="/" element={<Landing />} />

@@ -1,4 +1,4 @@
-/* ── App Layout — Light Luxury ── */
+/* ── App Layout — Light Luxury & Ultra-Responsive ── */
 
 .app-layout {
   display: flex;
@@ -6,6 +6,7 @@
   background-color: var(--color-base);
   position: relative;
   overflow-x: hidden;
+  width: 100%;
 }
 
 .app-main {
@@ -14,8 +15,11 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: 0;
   transition: margin-left var(--transition-base);
-  background-color: var(--color-base);
+  background-color: transparent;
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-collapsed + .app-main {
@@ -25,4 +29,50 @@
 .app-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-xl) var(--space-xl);
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-content-inner {
+  width: 100%;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+/* ── Mobile Sidebar Drawer Backdrop ── */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 95;
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Tablet & Mobile Breakpoints (1024px & below) ── */
+@media (max-width: 1024px) {
+  .app-main {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .app-content {
+    padding: var(--space-lg) var(--space-md);
+  }
+}
+
+/* ── Mobile Phone Breakpoint (768px & below) ── */
+@media (max-width: 768px) {
+  .app-content {
+    padding: 14px 10px;
+  }
+}
+
+/* ── Ultra-Wide Monitors (1800px & above) ── */
+@media (min-width: 1800px) {
+  .app-content-inner {
+    max-width: 1680px;
+  }
 }

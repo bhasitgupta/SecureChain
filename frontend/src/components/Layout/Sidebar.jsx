@@ -2,11 +2,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { NAV_ITEMS } from '../../utils/constants';
 import LineSidebar from '../Navigation/LineSidebar';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useState } from 'react';
 import './Sidebar.css';
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onClose }) {
   const { role } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
@@ -21,34 +21,53 @@ export default function Sidebar() {
     const target = allowedItems[index];
     if (target) {
       navigate(target.path);
+      if (onClose) {
+        onClose();
+      }
     }
   };
 
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
+    <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''} ${mobileOpen ? 'sidebar-mobile-open' : ''}`}>
       {/* Brand Header */}
       <div className="sidebar-header">
         <div className="sidebar-logo">
           <img src="/logo-icon.png" alt="SecureChain" className="logo-icon" />
-          {!collapsed && (
+          {(!collapsed || mobileOpen) && (
             <div className="sidebar-brand-text">
               <span className="logo-text">SecureChain<span className="brand-dot">.</span></span>
             </div>
           )}
         </div>
-        <button 
-          className="sidebar-toggle" 
-          onClick={() => setCollapsed(!collapsed)} 
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
+
+        <div className="sidebar-actions">
+          {/* Desktop Collapse Toggle */}
+          <button 
+            className="sidebar-toggle desktop-only" 
+            onClick={() => setCollapsed(!collapsed)} 
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+
+          {/* Mobile Drawer Close Button */}
+          {onClose && (
+            <button 
+              className="sidebar-mobile-close mobile-only" 
+              onClick={onClose}
+              title="Close navigation"
+              aria-label="Close navigation"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* React Bits LineSidebar Navigation */}
+      {/* LineSidebar Navigation */}
       <div className="sidebar-nav-container">
-        {!collapsed && (
+        {(!collapsed || mobileOpen) && (
           <div className="sidebar-section-title">CORE REGISTRIES</div>
         )}
         <LineSidebar
@@ -57,9 +76,9 @@ export default function Sidebar() {
           textColor="#5C7175"
           markerColor="#BBD5DA"
           showIndex={true}
-          showMarker={!collapsed}
+          showMarker={!collapsed || mobileOpen}
           proximityRadius={100}
-          maxShift={collapsed ? 0 : 12}
+          maxShift={(collapsed && !mobileOpen) ? 0 : 12}
           falloff="smooth"
           markerLength={24}
           markerGap={6}
@@ -76,7 +95,7 @@ export default function Sidebar() {
 
       {/* Footer Status Badge */}
       <div className="sidebar-footer">
-        {!collapsed ? (
+        {(!collapsed || mobileOpen) ? (
           <div className="sidebar-node-badge">
             <div className="node-status-row">
               <span className="node-pulse-dot" />
