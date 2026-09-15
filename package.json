@@ -8,7 +8,7 @@
     "frontend"
   ],
   "scripts": {
-    "build": "cd frontend && npx vite build",
+    "build": "cd frontend && npm run build",
     "dev": "npm --workspace frontend run dev",
     "dev:frontend": "npm --workspace frontend run dev",
     "dev:backend": "npm --workspace services/gateway run dev",
@@ -27,5 +27,11 @@
   "dependencies": {
     "ethers": "^6.17.0",
     "vite": "^8.3.0"
+  },
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "0.28.2"
+  },
+  "allowScripts": {
+    "esbuild": true
   }
 }
