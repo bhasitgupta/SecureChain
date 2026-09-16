@@ -188,6 +188,16 @@ export async function revokeRoleOnChain(role, account) {
   });
 }
 
+export async function deleteRoleAPI(address) {
+  try {
+    return await apiFetch(`/roles/${address}`, {
+      method: 'DELETE',
+    });
+  } catch {
+    return null;
+  }
+}
+
 // ── Cryptographic Verification ──
 export async function verifyDocumentVersion(versionId) {
   return await apiFetch(`/verify/${versionId}`, {

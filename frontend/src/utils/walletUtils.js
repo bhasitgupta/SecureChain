@@ -120,11 +120,15 @@ export async function switchNetwork(provider) {
 }
 
 /**
- * Sign a message for authentication verification
+ * Sign a message for authentication verification (standard EIP-4361 SIWE format for clean, safe wallet display)
  */
 export async function signAuthMessage(provider, address) {
-  const timestamp = Date.now();
-  const message = `SecureChain Authentication\nAddress: ${address}\nTimestamp: ${timestamp}\nThis signature verifies your identity.`;
+  const domain = typeof window !== 'undefined' ? window.location.host : 'localhost';
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+  const timestamp = new Date().toISOString();
+  const nonce = Math.random().toString(36).substring(2, 14);
+
+  const message = `${domain} wants you to sign in with your Ethereum account:\n${address}\n\nSign in to SecureChain Platform.\n\nURI: ${origin}\nVersion: 1\nChain ID: 80002\nNonce: ${nonce}\nIssued At: ${timestamp}`;
 
   const signature = await provider.request({
     method: 'personal_sign',

@@ -32,14 +32,41 @@ async function ensureRoleTable() {
 async function getStoredRoles(): Promise<Record<string, string>> {
   await ensureRoleTable();
   const result: Record<string, string> = { ...memoryRoles };
+  const iamLower = (config.iamAddress || '').toLowerCase();
+  const legacyContract = '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6';
+
+  // Purge contract address and USER roles from in-memory cache
+  delete result[legacyContract];
+  if (iamLower) delete result[iamLower];
+
   try {
-    const res = await query<{ address: string; role: string }>('SELECT address, role FROM assigned_roles');
+    // Proactively purge contract address and USER entries from the database
+    await query(
+      `DELETE FROM assigned_roles 
+       WHERE LOWER(address) = $1 
+          OR LOWER(address) = $2 
+          OR role = 'USER'`,
+      [legacyContract, iamLower]
+    );
+
+    const res = await query<{ address: string; role: string }>(
+      `SELECT address, role FROM assigned_roles 
+       WHERE role != 'USER' 
+         AND LOWER(address) != $1 
+         AND LOWER(address) != $2`,
+      [legacyContract, iamLower]
+    );
     for (const row of res.rows) {
-      result[row.address.toLowerCase()] = row.role;
+      const addr = row.address.toLowerCase();
+      result[addr] = row.role;
     }
   } catch {
     // Memory store fallback
   }
+
+  // Ensure cleaned dictionary
+  delete result[legacyContract];
+  if (iamLower) delete result[iamLower];
   return result;
 }
 
@@ -69,10 +96,20 @@ async function persistRole(address: string, role: string): Promise<void> {
 }
 
 export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
-  // GET /api/roles - Get all assigned roles across all devices
+  // GET /api/roles - Get all assigned privileged roles across all devices
   fastify.get('/', async (_req, _reply) => {
     const roles = await getStoredRoles();
-    return { success: true, roles };
+    const privileged: Record<string, string> = {};
+    const iamLower = (config.iamAddress || '').toLowerCase();
+    const legacyContract = '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6';
+
+    for (const [addr, r] of Object.entries(roles)) {
+      const a = addr.toLowerCase().trim();
+      if (r && r !== 'USER' && a !== legacyContract && a !== iamLower) {
+        privileged[a] = r;
+      }
+    }
+    return { success: true, roles: privileged };
   });
 
   // GET /api/roles/:address - check roles for address
@@ -252,23 +289,42 @@ export const rolesRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
       const { role, account } = parsed.data;
       const cleanRole = role.replace('_ROLE', '') as 'ADMIN' | 'MANAGER' | 'AUDITOR' | 'USER';
       const roleHash = Roles[cleanRole as keyof typeof Roles];
-
-      await persistRole(account, 'USER');
+      const norm = account.toLowerCase();
+      await persistRole(norm, 'USER');
+      try {
+        await query('DELETE FROM assigned_roles WHERE LOWER(address) = $1', [norm]);
+      } catch {}
 
       const iam = getIamContract(adminSigner);
       if (!config.iamAddress || !iam || !adminSigner) {
-        return { success: true, role, account, txHash: null, note: 'Revoked in authoritative registry' };
+        return { success: true, role, account: norm, txHash: null, note: 'Revoked in authoritative registry' };
       }
 
       try {
-        await iam.revokeRole.staticCall(roleHash, account);
-        const tx = await iam.revokeRole(roleHash, account);
+        const isHeld = await iam.hasRole(roleHash, norm).catch(() => false);
+        if (!isHeld) {
+          return { success: true, role, account: norm, txHash: null, note: 'Role was not held on-chain; purged from registry' };
+        }
+        const tx = await iam.revokeRole(roleHash, norm);
         await tx.wait(1);
-        return { success: true, role, account, txHash: tx.hash };
+        return { success: true, role, account: norm, txHash: tx.hash };
       } catch (err: any) {
         req.log.error(err);
-        return { success: true, role, account, txHash: null, warning: 'On-chain: ' + (err.reason || err.message) };
+        return { success: true, role, account: norm, txHash: null, warning: 'On-chain: ' + (err.reason || err.message) };
       }
+    }
+  );
+
+  // DELETE /api/roles/:address - Purge wallet from directory and database completely
+  fastify.delete<{ Params: { address: string } }>(
+    '/:address',
+    async (req, _reply) => {
+      const address = req.params.address.toLowerCase().trim();
+      delete memoryRoles[address];
+      try {
+        await query('DELETE FROM assigned_roles WHERE LOWER(address) = $1', [address]);
+      } catch {}
+      return { success: true, address, message: 'Purged from role registry and database' };
     }
   );
 };

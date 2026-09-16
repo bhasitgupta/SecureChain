@@ -2,7 +2,7 @@
 // gateway backend database persistence, and resilient local caching.
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, NETWORK } from './constants.js';
-import { fetchAssignedRoles, assignRoleAPI, fetchRolesForAddress } from '../lib/api.js';
+import { fetchAssignedRoles, assignRoleAPI, fetchRolesForAddress, deleteRoleAPI } from '../lib/api.js';
 
 const ROLE_REGISTRY_KEY = 'sc_wallet_roles';
 const ROLE_REQUESTS_KEY = 'sc_role_requests';
@@ -36,26 +36,42 @@ export const DEFAULT_ROLES = {
 const DEFAULT_REQUESTS = [];
 const memoryStore = {};
 
+function sanitizeRoleMap(obj) {
+  if (!obj || typeof obj !== 'object') return {};
+  const out = {};
+  const iamLower = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
+  const legacyContract = '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6';
+
+  Object.entries(obj).forEach(([k, v]) => {
+    const a = k.toLowerCase().trim();
+    if (v && v !== 'USER' && a !== legacyContract && a !== iamLower) {
+      out[a] = v;
+    }
+  });
+  return out;
+}
+
 function getStoredRoles() {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const stored = window.localStorage.getItem(ROLE_REGISTRY_KEY) || window.sessionStorage?.getItem(ROLE_REGISTRY_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) return sanitizeRoleMap(JSON.parse(stored));
     }
   } catch (e) {}
-  return { ...memoryStore };
+  return sanitizeRoleMap(memoryStore);
 }
 
 function saveStoredRoles(roles) {
+  const sanitized = sanitizeRoleMap(roles);
   Object.keys(memoryStore).forEach(k => delete memoryStore[k]);
-  Object.assign(memoryStore, roles);
+  Object.assign(memoryStore, sanitized);
 
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const payload = JSON.stringify(roles);
+      const payload = JSON.stringify(sanitized);
       window.localStorage.setItem(ROLE_REGISTRY_KEY, payload);
       window.sessionStorage?.setItem(ROLE_REGISTRY_KEY, payload);
-      window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { roles } }));
+      window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { roles: sanitized } }));
       window.dispatchEvent(new Event('storage'));
     }
   } catch (e) {}
@@ -67,21 +83,32 @@ function saveStoredRoles(roles) {
 export async function syncCloudRoles() {
   try {
     const roles = await fetchAssignedRoles();
-    if (roles && typeof roles === 'object' && Object.keys(roles).length > 0) {
-      const local = getStoredRoles();
-      let changed = false;
+    const local = getStoredRoles();
+    const iamLower = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
+    const legacyContract = '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6';
+    let changed = false;
 
+    // Purge unwanted addresses
+    if (local[legacyContract]) { delete local[legacyContract]; changed = true; }
+    if (iamLower && local[iamLower]) { delete local[iamLower]; changed = true; }
+    Object.keys(local).forEach(k => {
+      if (local[k] === 'USER') { delete local[k]; changed = true; }
+    });
+
+    if (roles && typeof roles === 'object') {
       Object.entries(roles).forEach(([addr, role]) => {
         const norm = addr.toLowerCase().trim();
-        if (norm && role && local[norm] !== role) {
-          local[norm] = role;
-          changed = true;
+        if (norm && norm !== legacyContract && norm !== iamLower && role && role !== 'USER') {
+          if (local[norm] !== role) {
+            local[norm] = role;
+            changed = true;
+          }
         }
       });
+    }
 
-      if (changed) {
-        saveStoredRoles(local);
-      }
+    if (changed) {
+      saveStoredRoles(local);
     }
   } catch (e) {
     // Fallback to local and default store
@@ -229,10 +256,20 @@ export function getAllWalletRoles() {
       }
     });
 
-    // Primary admin address is permanently guaranteed ADMIN
-    normalizedRegistry[PRIMARY_ADMIN_ADDRESS.toLowerCase()] = 'ADMIN';
+    // Clean up: Filter out USER and IAM contract address completely
+    const privileged = {};
+    const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
+    Object.entries(normalizedRegistry).forEach(([addr, role]) => {
+      const a = addr.toLowerCase().trim();
+      if (role && role !== 'USER' && a !== iamAddr && a !== '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6') {
+        privileged[a] = role;
+      }
+    });
 
-    return normalizedRegistry;
+    // Primary admin address is permanently guaranteed ADMIN
+    privileged[PRIMARY_ADMIN_ADDRESS.toLowerCase()] = 'ADMIN';
+
+    return privileged;
   } catch (e) {
     return { ...DEFAULT_ROLES, [PRIMARY_ADMIN_ADDRESS.toLowerCase()]: 'ADMIN' };
   }
@@ -244,13 +281,19 @@ export function getAllWalletRoles() {
 export async function setWalletRole(address, role) {
   if (!address) return;
   const normalized = address.toLowerCase().trim();
-  const currentRoles = getAllWalletRoles();
+  const currentRoles = getStoredRoles();
 
   if (role === 'USER') {
-    currentRoles[normalized] = 'USER';
+    delete currentRoles[normalized];
+    delete memoryStore[normalized];
   } else {
     currentRoles[normalized] = role;
+    memoryStore[normalized] = role;
   }
+
+  // Remove any legacy contract address entry
+  delete currentRoles['0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6'];
+  delete memoryStore['0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6'];
 
   saveStoredRoles(currentRoles);
 
@@ -262,15 +305,26 @@ export async function setWalletRole(address, role) {
   }
 }
 
-/**
- * Remove an assigned role (downgrade to USER)
- */
 export async function removeWalletRole(address) {
   if (!address) return;
   const normalized = address.toLowerCase().trim();
-  const currentRoles = getAllWalletRoles();
-  currentRoles[normalized] = 'USER';
+  const currentRoles = getStoredRoles();
+  const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
+
+  delete currentRoles[normalized];
+  delete memoryStore[normalized];
+  delete currentRoles['0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6'];
+  delete memoryStore['0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6'];
+  if (iamAddr) {
+    delete currentRoles[iamAddr];
+    delete memoryStore[iamAddr];
+  }
+
   saveStoredRoles(currentRoles);
+
+  try {
+    await deleteRoleAPI(normalized);
+  } catch (e) {}
 
   try {
     await assignRoleAPI(normalized, 'USER');
