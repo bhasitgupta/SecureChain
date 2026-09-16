@@ -322,18 +322,10 @@ export function saveCachedAssets(assets) {
 }
 
 export function buildErc721MetadataURI({ name, description, assetClass, imageUrl }) {
-  // Generate absolute image URL for Polygonscan, Etherscan, and OpenSea crawlers
-  let resolvedImg = imageUrl;
-  if (!resolvedImg) {
-    resolvedImg = 'https://raw.githubusercontent.com/bhasitgupta/SIH-26125/main/frontend/public/assets/nfts/neon_cat.jpg';
-  } else if (resolvedImg.startsWith('/')) {
-    resolvedImg = `https://raw.githubusercontent.com/bhasitgupta/SIH-26125/main/frontend/public${resolvedImg}`;
-  }
-
   const metadata = {
     name: name || 'Enterprise Asset',
     description: description || `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy`,
-    image: resolvedImg,
+    image: imageUrl || '',
     external_url: 'https://securechain1.vercel.app/assets',
     attributes: [
       { trait_type: 'Asset Class', value: assetClass || 'Defence Equipment' },
@@ -375,17 +367,17 @@ export function parseMetadataURI(rawUri) {
 }
 
 export function resolveThumbnail(tokenId, metadataURI, assetClass) {
-  // 1. User/browser uploaded thumbnail from storage
-  try {
-    const thumbs = JSON.parse(localStorage.getItem(ASSET_THUMBNAILS_KEY) || '{}');
-    if (thumbs[String(tokenId)]) return thumbs[String(tokenId)];
-  } catch {}
-
-  // 2. Parsed from ERC-721 Data URI
+  // 1. Parsed directly from on-chain ERC-721 Metadata URI
   const parsed = parseMetadataURI(metadataURI);
-  if (parsed.image) return parsed.image;
+  if (parsed.image && parsed.image.trim()) {
+    let img = parsed.image.trim();
+    if (img.startsWith('ipfs://')) {
+      return `https://ipfs.io/ipfs/${img.replace('ipfs://', '')}`;
+    }
+    return img;
+  }
 
-  // 3. Direct image URL embedded in metadataURI
+  // 2. Direct image URL embedded on-chain in metadataURI
   if (typeof metadataURI === 'string') {
     const clean = metadataURI.trim();
     if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:image/')) {
@@ -396,17 +388,8 @@ export function resolveThumbnail(tokenId, metadataURI, assetClass) {
     }
   }
 
-  // 4. High-res visual fallbacks for recognized on-chain tokens
-  const desc = ((parsed.name || metadataURI) || '').toLowerCase();
-  if (String(tokenId) === '2' || desc.includes('cat')) {
-    return '/assets/nfts/neon_cat.jpg';
-  }
-  if (String(tokenId) === '1' || desc.includes('matix') || desc.includes('matrix')) {
-    return '/assets/nfts/matrix.jpg';
-  }
-
-  // 5. Default high-tech defence shield asset
-  return '/assets/nfts/shield.jpg';
+  // No fake local images — return null if on-chain metadata has no image
+  return null;
 }
 
 export function saveAssetThumbnail(tokenId, dataUrlOrBlob) {
@@ -581,14 +564,14 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl })
       const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
       const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
-      // Construct official ERC-721 metadata URI with image for Polygonscan/Etherscan compatibility
+      // Construct official ERC-721 metadata URI with real image for Polygonscan compatibility
       let finalMetadataURI = metadataURI;
       if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
         finalMetadataURI = buildErc721MetadataURI({
           name: metadataURI || 'Enterprise Digital Asset',
           description: `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy by SecureChain`,
           assetClass: assetClass || 'Defence Equipment',
-          imageUrl: imageUrl || '/assets/nfts/neon_cat.jpg',
+          imageUrl: imageUrl || '',
         });
       }
 

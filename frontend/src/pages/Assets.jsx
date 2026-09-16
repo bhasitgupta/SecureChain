@@ -1,17 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, getStatusColor } from '../utils/formatters';
-import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, saveAssetThumbnail } from '../lib/api';
+import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain } from '../lib/api';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
-import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, Image as ImageIcon, Sparkles, RefreshCw } from 'lucide-react';
+import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, RefreshCw, ImageOff } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import './Assets.css';
-
-const PRESET_THUMBNAILS = [
-  { name: 'Neon Samurai Cat', url: '/assets/nfts/neon_cat.jpg' },
-  { name: 'Tactical Matrix Grid', url: '/assets/nfts/matrix.jpg' },
-  { name: 'Quantum Shield Firewall', url: '/assets/nfts/shield.jpg' },
-];
 
 export default function Assets() {
   const { wallet, role } = useAuth();
@@ -30,8 +24,9 @@ export default function Assets() {
   const [description, setDescription] = useState('');
   const [assetClass, setAssetClass] = useState('Defence Equipment');
   const [toAddress, setToAddress] = useState('');
+  const [imageUrlInput, setImageUrlInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
-  const [selectedPreset, setSelectedPreset] = useState('/assets/nfts/neon_cat.jpg');
+  const [fileBase64, setFileBase64] = useState(null);
   const [mintLoading, setMintLoading] = useState(false);
   const [mintError, setMintError] = useState('');
   const [mintSuccess, setMintSuccess] = useState(null);
@@ -44,16 +39,6 @@ export default function Assets() {
     loading: false,
     error: '',
     success: null,
-  });
-
-  // Image Update Modal State
-  const [imageModal, setImageModal] = useState({
-    open: false,
-    asset: null,
-    previewUrl: '',
-    customUrl: '',
-    error: '',
-    success: false,
   });
 
   const loadAssetsData = async (isManual = false) => {
@@ -88,18 +73,35 @@ export default function Assets() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleFileSelection = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFileBase64(reader.result);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setSelectedFile(null);
+      setFileBase64(null);
+    }
+  };
+
   const handleMint = async () => {
     if (!canMint) {
       setMintError('Unauthorized: Only administrators have minting privileges.');
       return;
     }
     if (!description || !description.trim()) {
-      setMintError('Asset description is required');
+      setMintError('Asset title / description is required');
       return;
     }
     setMintLoading(true);
     setMintError('');
     setMintSuccess(null);
+
+    const finalImage = fileBase64 || imageUrlInput?.trim() || '';
 
     try {
       const res = await mintAsset({
@@ -107,15 +109,10 @@ export default function Assets() {
         assetClass,
         metadataURI: description.trim(),
         file: selectedFile,
-        imageUrl: selectedPreset || '/assets/nfts/neon_cat.jpg',
+        imageUrl: finalImage,
       });
 
       if (res && res.tokenId) {
-        // If preset chosen and no file, save preset thumbnail
-        if (!selectedFile && selectedPreset) {
-          saveAssetThumbnail(res.tokenId, selectedPreset);
-        }
-
         setMintSuccess({
           tokenId: res.tokenId,
           txHash: res.txHash,
@@ -126,6 +123,8 @@ export default function Assets() {
           setMintSuccess(null);
           setDescription('');
           setSelectedFile(null);
+          setFileBase64(null);
+          setImageUrlInput('');
         }, 3200);
       } else {
         throw new Error('Minting failed: no token ID returned');
@@ -197,55 +196,6 @@ export default function Assets() {
         error: err.message || 'On-chain transfer failed',
       }));
     }
-  };
-
-  const openImageModal = (asset) => {
-    setImageModal({
-      open: true,
-      asset,
-      previewUrl: asset.thumbnailUrl || '/assets/nfts/shield.jpg',
-      customUrl: '',
-      error: '',
-      success: false,
-    });
-  };
-
-  const closeImageModal = () => {
-    setImageModal({
-      open: false,
-      asset: null,
-      previewUrl: '',
-      customUrl: '',
-      error: '',
-      success: false,
-    });
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImageModal(prev => ({ ...prev, previewUrl: reader.result, customUrl: '' }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSaveImage = () => {
-    if (!imageModal.asset) return;
-    const targetUrl = imageModal.customUrl?.trim() || imageModal.previewUrl;
-    if (!targetUrl) {
-      setImageModal(prev => ({ ...prev, error: 'Please choose or paste an image.' }));
-      return;
-    }
-
-    saveAssetThumbnail(imageModal.asset.tokenId, targetUrl);
-    setImageModal(prev => ({ ...prev, success: true, error: '' }));
-    setTimeout(() => {
-      closeImageModal();
-      loadAssetsData();
-    }, 1200);
   };
 
   const myAssets = assets.filter(a =>
@@ -358,48 +308,55 @@ export default function Assets() {
                   </div>
                 </div>
                 
-                {/* Thumbnail Display with Fallback Protection */}
-                <div 
-                  style={{ 
-                    height: 150, 
-                    marginBottom: 'var(--space-md)', 
-                    overflow: 'hidden', 
-                    borderRadius: 8, 
-                    background: '#0F172A', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    border: '1px solid #1E293B',
-                    position: 'relative'
-                  }}
-                >
-                  <img 
-                    src={asset.thumbnailUrl || '/assets/nfts/shield.jpg'} 
-                    alt={asset.description} 
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                    onError={(e) => { 
-                      e.target.onerror = null; 
-                      e.target.src = '/assets/nfts/shield.jpg'; 
-                    }} 
-                  />
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    style={{
-                      position: 'absolute',
-                      top: 6,
-                      right: 6,
-                      background: 'rgba(15, 23, 42, 0.75)',
-                      backdropFilter: 'blur(4px)',
-                      padding: '4px 8px',
-                      fontSize: '0.72rem',
-                      color: '#E2E8F0'
+                {/* Authentic On-Chain Thumbnail Display */}
+                {asset.thumbnailUrl ? (
+                  <div 
+                    style={{ 
+                      height: 150, 
+                      marginBottom: 'var(--space-md)', 
+                      overflow: 'hidden', 
+                      borderRadius: 8, 
+                      background: '#0F172A', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      border: '1px solid #1E293B',
                     }}
-                    onClick={() => openImageModal(asset)}
-                    title="Change Thumbnail"
                   >
-                    <ImageIcon size={12} /> Edit Image
-                  </button>
-                </div>
+                    <img 
+                      src={asset.thumbnailUrl} 
+                      alt={asset.description} 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      onError={(e) => { 
+                        e.target.style.display = 'none'; 
+                        if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                      }} 
+                    />
+                    <div style={{ display: 'none', flexDirection: 'column', alignItems: 'center', gap: 6, color: '#64748B' }}>
+                      <ImageOff size={28} />
+                      <span className="text-xs">Image unavailable</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    style={{ 
+                      height: 120, 
+                      marginBottom: 'var(--space-md)', 
+                      borderRadius: 8, 
+                      background: '#0F172A', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      color: '#475569',
+                      border: '1px dashed #334155',
+                      gap: 6
+                    }}
+                  >
+                    <Gem size={32} style={{ opacity: 0.35 }} />
+                    <span className="text-xs font-mono" style={{ color: '#64748B' }}>No On-Chain Image</span>
+                  </div>
+                )}
 
                 <h4 style={{ marginBottom: 'var(--space-xs)' }}>{asset.description}</h4>
                 <div className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>{asset.assetClass}</div>
@@ -463,7 +420,7 @@ export default function Assets() {
           <div className="modal-content card animate-fade-scale" onClick={e => e.stopPropagation()}>
             <h3 style={{ marginBottom: 'var(--space-xs)' }}>Mint New Asset On-Chain</h3>
             <p className="text-xs text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
-              Broadcasts an ERC-721 mint transaction to Polygon Amoy. Requires wallet signature.
+              Broadcasts an ERC-721 mint transaction to Polygon Amoy. Encodes your genuine image into on-chain metadata for Polygonscan.
             </p>
             
             {mintError && (
@@ -488,10 +445,10 @@ export default function Assets() {
 
             <div className="flex flex-col gap-md">
               <div className="input-group">
-                <label>Asset Description / Title</label>
+                <label>Asset Title / Description</label>
                 <input 
                   className="input" 
-                  placeholder="e.g. Tactical Drone Navigation Matrix" 
+                  placeholder="e.g. Tactical Defense Drone Matrix" 
                   value={description}
                   onChange={e => setDescription(e.target.value)}
                 />
@@ -522,47 +479,37 @@ export default function Assets() {
                 />
               </div>
 
-              {/* Preset Visuals Selector */}
               <div className="input-group">
-                <label className="flex items-center justify-between">
-                  <span>Visual Artwork Preset</span>
-                  <span className="text-xs text-tertiary">Select or upload custom file below</span>
-                </label>
-                <div className="flex gap-sm" style={{ marginTop: 4 }}>
-                  {PRESET_THUMBNAILS.map(p => (
-                    <div 
-                      key={p.url}
-                      onClick={() => { setSelectedPreset(p.url); setSelectedFile(null); }}
-                      style={{
-                        flex: 1,
-                        borderRadius: 6,
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                        border: selectedPreset === p.url && !selectedFile ? '2px solid #2563EB' : '1px solid #334155',
-                        position: 'relative'
-                      }}
-                    >
-                      <img src={p.url} alt={p.name} style={{ width: '100%', height: 60, objectFit: 'cover' }} />
-                      <div className="text-xs" style={{ padding: '2px 4px', background: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="input-group">
-                <label>Custom Thumbnail File (Optional)</label>
+                <label>Upload Real Asset Image (File)</label>
                 <input 
                   type="file" 
                   className="input" 
                   accept="image/*"
-                  onChange={e => {
-                    if (e.target.files && e.target.files[0]) {
-                      setSelectedFile(e.target.files[0]);
-                      setSelectedPreset(null);
-                    }
-                  }}
+                  onChange={handleFileSelection}
                 />
               </div>
+
+              <div className="input-group">
+                <label>Or Public Image URL / IPFS Hash</label>
+                <input 
+                  className="input" 
+                  placeholder="https://... or ipfs://..."
+                  value={imageUrlInput}
+                  onChange={e => setImageUrlInput(e.target.value)}
+                  disabled={!!selectedFile}
+                />
+              </div>
+
+              {/* Real Image Preview */}
+              {(fileBase64 || imageUrlInput) && (
+                <div style={{ height: 120, borderRadius: 6, overflow: 'hidden', background: '#0F172A', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <img 
+                    src={fileBase64 || imageUrlInput} 
+                    alt="Preview" 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                  />
+                </div>
+              )}
 
               <div className="flex gap-md" style={{ marginTop: 'var(--space-md)' }}>
                 <button 
@@ -637,85 +584,6 @@ export default function Assets() {
                 </button>
                 <button className="btn btn-secondary" onClick={closeTransferModal}>Cancel</button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Image Update Modal */}
-      {imageModal.open && imageModal.asset && (
-        <div className="modal-overlay" onClick={closeImageModal}>
-          <div className="modal-content card animate-fade-scale" onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: 'var(--space-xs)' }}>
-              Set Artwork for Token #{imageModal.asset.tokenId}
-            </h3>
-            <p className="text-xs text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
-              Choose a curated visual or upload a custom image for this digital asset.
-            </p>
-
-            {imageModal.error && (
-              <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#FEE2E2', color: '#991B1B' }}>
-                <AlertCircle size={16} /> <span>{imageModal.error}</span>
-              </div>
-            )}
-
-            {imageModal.success && (
-              <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46' }}>
-                <CheckCircle2 size={16} /> <span>Artwork updated successfully!</span>
-              </div>
-            )}
-
-            {/* Current Preview */}
-            <div style={{ height: 160, borderRadius: 8, overflow: 'hidden', marginBottom: 'var(--space-md)', background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <img 
-                src={imageModal.customUrl || imageModal.previewUrl} 
-                alt="Preview" 
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-              />
-            </div>
-
-            {/* Preset Selector */}
-            <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
-              <label>Choose From Presets</label>
-              <div className="flex gap-sm" style={{ marginTop: 4 }}>
-                {PRESET_THUMBNAILS.map(p => (
-                  <button 
-                    key={p.url}
-                    type="button"
-                    className="btn btn-sm btn-ghost"
-                    style={{ flex: 1, border: imageModal.previewUrl === p.url ? '2px solid #2563EB' : '1px solid #334155' }}
-                    onClick={() => setImageModal(prev => ({ ...prev, previewUrl: p.url, customUrl: '' }))}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
-              <label>Or Upload Custom File</label>
-              <input type="file" className="input" accept="image/*" onChange={handleFileChange} />
-            </div>
-
-            <div className="input-group" style={{ marginBottom: 'var(--space-md)' }}>
-              <label>Or Paste Image URL (HTTP / IPFS)</label>
-              <input 
-                className="input" 
-                placeholder="https://... or ipfs://..." 
-                value={imageModal.customUrl}
-                onChange={e => setImageModal(prev => ({ ...prev, customUrl: e.target.value }))}
-              />
-            </div>
-
-            <div className="flex gap-md" style={{ marginTop: 'var(--space-md)' }}>
-              <button 
-                className="btn btn-primary" 
-                style={{ flex: 1 }} 
-                onClick={handleSaveImage}
-              >
-                Save Artwork
-              </button>
-              <button className="btn btn-secondary" onClick={closeImageModal}>Cancel</button>
             </div>
           </div>
         </div>
