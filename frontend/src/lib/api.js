@@ -321,6 +321,59 @@ export function saveCachedAssets(assets) {
   } catch {}
 }
 
+export function buildErc721MetadataURI({ name, description, assetClass, imageUrl }) {
+  // Generate absolute image URL for Polygonscan, Etherscan, and OpenSea crawlers
+  let resolvedImg = imageUrl;
+  if (!resolvedImg) {
+    resolvedImg = 'https://raw.githubusercontent.com/bhasitgupta/SIH-26125/main/frontend/public/assets/nfts/neon_cat.jpg';
+  } else if (resolvedImg.startsWith('/')) {
+    resolvedImg = `https://raw.githubusercontent.com/bhasitgupta/SIH-26125/main/frontend/public${resolvedImg}`;
+  }
+
+  const metadata = {
+    name: name || 'Enterprise Asset',
+    description: description || `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy`,
+    image: resolvedImg,
+    external_url: 'https://securechain1.vercel.app/assets',
+    attributes: [
+      { trait_type: 'Asset Class', value: assetClass || 'Defence Equipment' },
+      { trait_type: 'Network', value: 'Polygon Amoy (80002)' },
+      { trait_type: 'Standard', value: 'ERC-721' }
+    ]
+  };
+
+  const jsonStr = JSON.stringify(metadata);
+  try {
+    const b64 = typeof window !== 'undefined' && window.btoa 
+      ? window.btoa(unescape(encodeURIComponent(jsonStr)))
+      : Buffer.from(jsonStr).toString('base64');
+    return `data:application/json;base64,${b64}`;
+  } catch {
+    return `data:application/json;utf8,${jsonStr}`;
+  }
+}
+
+export function parseMetadataURI(rawUri) {
+  if (!rawUri || typeof rawUri !== 'string') return { name: null, image: null };
+  const str = rawUri.trim();
+  if (str.startsWith('data:application/json;base64,')) {
+    try {
+      const b64 = str.split(',')[1];
+      const json = decodeURIComponent(escape(atob(b64)));
+      const parsed = JSON.parse(json);
+      return { name: parsed.name, image: parsed.image };
+    } catch {}
+  }
+  if (str.startsWith('data:application/json;utf8,') || str.startsWith('{')) {
+    try {
+      const json = str.startsWith('{') ? str : str.replace('data:application/json;utf8,', '');
+      const parsed = JSON.parse(json);
+      return { name: parsed.name, image: parsed.image };
+    } catch {}
+  }
+  return { name: null, image: null };
+}
+
 export function resolveThumbnail(tokenId, metadataURI, assetClass) {
   // 1. User/browser uploaded thumbnail from storage
   try {
@@ -328,7 +381,11 @@ export function resolveThumbnail(tokenId, metadataURI, assetClass) {
     if (thumbs[String(tokenId)]) return thumbs[String(tokenId)];
   } catch {}
 
-  // 2. Direct image URL embedded in metadataURI
+  // 2. Parsed from ERC-721 Data URI
+  const parsed = parseMetadataURI(metadataURI);
+  if (parsed.image) return parsed.image;
+
+  // 3. Direct image URL embedded in metadataURI
   if (typeof metadataURI === 'string') {
     const clean = metadataURI.trim();
     if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:image/')) {
@@ -339,8 +396,8 @@ export function resolveThumbnail(tokenId, metadataURI, assetClass) {
     }
   }
 
-  // 3. High-res visual fallbacks for recognized on-chain tokens
-  const desc = (metadataURI || '').toLowerCase();
+  // 4. High-res visual fallbacks for recognized on-chain tokens
+  const desc = ((parsed.name || metadataURI) || '').toLowerCase();
   if (String(tokenId) === '2' || desc.includes('cat')) {
     return '/assets/nfts/neon_cat.jpg';
   }
@@ -348,7 +405,7 @@ export function resolveThumbnail(tokenId, metadataURI, assetClass) {
     return '/assets/nfts/matrix.jpg';
   }
 
-  // 4. Default high-tech defence shield asset
+  // 5. Default high-tech defence shield asset
   return '/assets/nfts/shield.jpg';
 }
 
@@ -484,7 +541,7 @@ export async function fetchAssets() {
   return onChainAssets;
 }
 
-export async function mintAsset({ to, assetClass, metadataURI, file }) {
+export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl }) {
   // 1. Direct Web3 / MetaMask on-chain execution if wallet is available
   if (typeof window !== 'undefined' && window.ethereum) {
     try {
@@ -524,11 +581,22 @@ export async function mintAsset({ to, assetClass, metadataURI, file }) {
       const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
       const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
+      // Construct official ERC-721 metadata URI with image for Polygonscan/Etherscan compatibility
+      let finalMetadataURI = metadataURI;
+      if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
+        finalMetadataURI = buildErc721MetadataURI({
+          name: metadataURI || 'Enterprise Digital Asset',
+          description: `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy by SecureChain`,
+          assetClass: assetClass || 'Defence Equipment',
+          imageUrl: imageUrl || '/assets/nfts/neon_cat.jpg',
+        });
+      }
+
       const tx = await nft.mint(
         targetAddress,
         didHash,
         assetClass || 'Defence Equipment',
-        metadataURI || 'Enterprise Asset'
+        finalMetadataURI
       );
 
       const receipt = await tx.wait();

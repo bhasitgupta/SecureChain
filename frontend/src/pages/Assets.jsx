@@ -107,6 +107,7 @@ export default function Assets() {
         assetClass,
         metadataURI: description.trim(),
         file: selectedFile,
+        imageUrl: selectedPreset || '/assets/nfts/neon_cat.jpg',
       });
 
       if (res && res.tokenId) {
