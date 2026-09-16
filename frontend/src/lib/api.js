@@ -1,3 +1,7 @@
+import { ethers } from 'ethers';
+import { CONTRACT_ADDRESSES, NETWORK } from '../utils/constants.js';
+import { AMOY_RPCS } from '../utils/roleRegistry.js';
+
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export function getAuthHeaders() {
@@ -260,113 +264,289 @@ export async function getDocumentDownloadUrl(docId, versionId) {
   }
 }
 
+// ── EnterpriseAssetNFT ABI & Helpers ──
+export const NFT_ABI = [
+  'function name() external view returns (string)',
+  'function symbol() external view returns (string)',
+  'function exists(uint256 tokenId) external view returns (bool)',
+  'function ownerOf(uint256 tokenId) external view returns (address)',
+  'function balanceOf(address owner) external view returns (uint256)',
+  'function getAsset(uint256 tokenId) external view returns (tuple(uint256 tokenId, bytes32 didHash, string assetClass, uint8 status, string metadataURI, uint256 mintedAt))',
+  'function mint(address to, bytes32 didHash, string calldata assetClass, string calldata metadataURI) external returns (uint256 tokenId)',
+  'function transferFrom(address from, address to, uint256 tokenId) public',
+  'function safeTransferFrom(address from, address to, uint256 tokenId) external',
+  'function authorizeTransfer(uint256 tokenId, address from, address to, bytes32 toDidHash) external',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+  'event AssetMinted(uint256 indexed tokenId, bytes32 indexed didHash, string assetClass)',
+  'event AssetTransferAuthorized(uint256 indexed tokenId, address indexed from, address indexed to, address actor)'
+];
+
+export async function getAmoyProvider() {
+  for (const rpc of AMOY_RPCS) {
+    try {
+      const p = new ethers.JsonRpcProvider(rpc);
+      await p.getBlockNumber();
+      return p;
+    } catch {}
+  }
+  return new ethers.JsonRpcProvider('https://polygon-amoy-bor-rpc.publicnode.com');
+}
+
 // ── Assets ──
 export async function fetchAssets() {
-  let backendAssets = [];
+  const onChainAssets = [];
+  const seenIds = new Set();
+
+  // 1. Direct Polygon Amoy on-chain query
+  try {
+    const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
+    const provider = await getAmoyProvider();
+    const nft = new ethers.Contract(nftAddr, NFT_ABI, provider);
+
+    for (let id = 1; id <= 50; id++) {
+      try {
+        const ok = await nft.exists(id);
+        if (!ok) break;
+        const owner = await nft.ownerOf(id);
+        const rec = await nft.getAsset(id);
+        const tokenId = String(id);
+        seenIds.add(tokenId);
+
+        let localThumb = null;
+        try {
+          const thumbs = JSON.parse(localStorage.getItem('sc_asset_thumbnails') || '{}');
+          localThumb = thumbs[tokenId] || null;
+        } catch {}
+
+        onChainAssets.push({
+          tokenId,
+          description: rec.metadataURI || `Asset #${tokenId}`,
+          assetClass: rec.assetClass || 'Enterprise Asset',
+          assetStatus: Number(rec.status) === 1 ? 'Active' : Number(rec.status) === 2 ? 'Transferred' : 'Retired',
+          ownerName: owner.toLowerCase(),
+          createdAt: Number(rec.mintedAt) ? Number(rec.mintedAt) * 1000 : Date.now(),
+          thumbnailUrl: localThumb || null,
+          onChain: true,
+        });
+      } catch (err) {
+        break;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to query on-chain assets from Polygon Amoy:', err);
+  }
+
+  // 2. Fetch backend thumbnails/metadata if gateway is available
   try {
     const data = await apiFetch('/assets');
     if (data && Array.isArray(data.assets)) {
-      backendAssets = data.assets;
+      for (const ba of data.assets) {
+        const tid = String(ba.tokenId);
+        const existing = onChainAssets.find(a => a.tokenId === tid);
+        if (existing) {
+          if (ba.thumbnailUrl) existing.thumbnailUrl = ba.thumbnailUrl;
+        } else if (ba.chain && ba.chain.owner) {
+          onChainAssets.push({
+            tokenId: tid,
+            description: ba.chain.metadataURI || ba.description || `Asset #${tid}`,
+            assetClass: ba.chain.assetClass || ba.assetClass || 'Enterprise Asset',
+            assetStatus: ba.chain.status || 'Active',
+            ownerName: ba.chain.owner.toLowerCase(),
+            createdAt: ba.createdAt || Date.now(),
+            thumbnailUrl: ba.thumbnailUrl,
+            onChain: true,
+          });
+          seenIds.add(tid);
+        }
+      }
     }
   } catch {}
 
-  let localAssets = [];
+  // Clean out legacy mock/fake local assets from localStorage so user is not deceived
   try {
-    const stored = localStorage.getItem('sc_digital_assets');
-    if (stored) {
-      localAssets = JSON.parse(stored);
-    }
+    localStorage.removeItem('sc_digital_assets');
   } catch {}
 
-  // Merge local and backend assets by tokenId
-  const merged = [...localAssets];
-  const seenIds = new Set(localAssets.map(a => String(a.tokenId)));
-
-  for (const ba of backendAssets) {
-    if (!seenIds.has(String(ba.tokenId))) {
-      merged.push({
-        tokenId: ba.tokenId,
-        description: (ba.chain && ba.chain.metadataURI) || ba.description || `Asset #${ba.tokenId}`,
-        assetClass: (ba.chain && ba.chain.assetClass) || ba.assetClass || 'Enterprise Asset',
-        assetStatus: (ba.chain && ba.chain.status) || ba.assetStatus || 'Active',
-        ownerName: (ba.chain && ba.chain.owner) || ba.owner || ba.ownerName || 'Enterprise Custody',
-        createdAt: ba.createdAt || Date.now(),
-        thumbnailUrl: ba.thumbnailUrl,
-      });
-      seenIds.add(String(ba.tokenId));
-    }
-  }
-
-  return merged;
+  return onChainAssets;
 }
 
 export async function mintAsset({ to, assetClass, metadataURI, file }) {
+  // 1. Direct Web3 / MetaMask on-chain execution if wallet is available
+  if (typeof window !== 'undefined' && window.ethereum) {
+    try {
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await browserProvider.getSigner();
+      const currentAddress = await signer.getAddress();
+      const targetAddress = (to || currentAddress).trim().toLowerCase();
+
+      // Ensure network is Polygon Amoy (80002 / 0x13882)
+      const network = await browserProvider.getNetwork();
+      if (Number(network.chainId) !== 80002) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x13882' }],
+          });
+        } catch (switchErr) {
+          if (switchErr.code === 4902) {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: '0x13882',
+                chainName: 'Polygon Amoy Testnet',
+                nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+                rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://rpc-amoy.polygon.technology'],
+                blockExplorerUrls: ['https://amoy.polygonscan.com'],
+              }],
+            });
+          } else {
+            throw switchErr;
+          }
+        }
+      }
+
+      const did = `did:pkh:eip155:80002:${targetAddress}`;
+      const didHash = ethers.keccak256(ethers.toUtf8Bytes(did));
+      const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
+      const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
+
+      const tx = await nft.mint(
+        targetAddress,
+        didHash,
+        assetClass || 'Defence Equipment',
+        metadataURI || 'Enterprise Asset'
+      );
+
+      const receipt = await tx.wait();
+      let tokenId = null;
+
+      for (const log of receipt.logs) {
+        try {
+          const parsed = nft.interface.parseLog(log);
+          if (parsed && (parsed.name === 'AssetMinted' || parsed.name === 'Transfer')) {
+            tokenId = (parsed.args.tokenId ?? parsed.args[2]).toString();
+            break;
+          }
+        } catch {}
+      }
+
+      // If thumbnail was uploaded, save locally keyed by tokenId
+      if (file && tokenId) {
+        try {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            try {
+              const thumbs = JSON.parse(localStorage.getItem('sc_asset_thumbnails') || '{}');
+              thumbs[tokenId] = reader.result;
+              localStorage.setItem('sc_asset_thumbnails', JSON.stringify(thumbs));
+            } catch {}
+          };
+          reader.readAsDataURL(file);
+        } catch {}
+      }
+
+      // Notify backend if online
+      try {
+        const formData = new FormData();
+        formData.append('to', targetAddress);
+        formData.append('assetClass', assetClass || 'Defence Equipment');
+        formData.append('metadataURI', metadataURI || 'Enterprise Asset');
+        if (file) formData.append('thumbnail', file);
+        await fetch(`${API_BASE}/assets/mint`, {
+          method: 'POST',
+          body: formData,
+          headers: { ...getAuthHeaders() },
+          credentials: 'include',
+        });
+      } catch {}
+
+      const result = {
+        tokenId: tokenId || '1',
+        txHash: tx.hash,
+        blockNumber: receipt.blockNumber,
+        owner: targetAddress,
+        success: true,
+      };
+
+      window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: result }));
+      return result;
+    } catch (metaMaskErr) {
+      if (metaMaskErr.code === 'ACTION_REJECTED' || metaMaskErr.message?.includes('user rejected')) {
+        throw new Error('Transaction rejected in wallet');
+      }
+      console.warn('MetaMask on-chain mint failed:', metaMaskErr);
+      throw new Error(metaMaskErr.reason || metaMaskErr.shortMessage || metaMaskErr.message || 'On-chain mint failed');
+    }
+  }
+
+  // 2. Backend gateway relayer fallback
   const formData = new FormData();
   if (to) formData.append('to', to);
   if (assetClass) formData.append('assetClass', assetClass);
   if (metadataURI) formData.append('metadataURI', metadataURI);
   if (file) formData.append('thumbnail', file);
 
-  // 1. Attempt backend gateway mint first if online
-  try {
-    const res = await fetch(`${API_BASE}/assets/mint`, {
-      method: 'POST',
-      body: formData,
-      headers: {
-        ...getAuthHeaders(),
-      },
-      credentials: 'include',
-    });
+  const res = await fetch(`${API_BASE}/assets/mint`, {
+    method: 'POST',
+    body: formData,
+    headers: { ...getAuthHeaders() },
+    credentials: 'include',
+  });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.tokenId) return data;
-    }
-  } catch (netErr) {
-    console.warn('Backend mint offline or unreachable, proceeding with cryptographic local persistence:', netErr?.message);
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Minting failed with status ${res.status}`);
   }
 
-  // 2. Resilient cryptographic fallback: generate verified enterprise asset record
-  let thumbnailBase64 = null;
-  if (file) {
-    thumbnailBase64 = await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
+  const data = await res.json();
+  window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: data }));
+  return data;
+}
+
+export async function transferAssetOnChain({ tokenId, toAddress }) {
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error('MetaMask or Web3 wallet is required to transfer assets on-chain.');
+  }
+
+  const browserProvider = new ethers.BrowserProvider(window.ethereum);
+  const signer = await browserProvider.getSigner();
+  const currentAddress = await signer.getAddress();
+  const target = toAddress.trim();
+
+  if (!ethers.isAddress(target)) {
+    throw new Error('Invalid recipient address: ' + toAddress);
+  }
+
+  // Ensure network is Polygon Amoy (80002 / 0x13882)
+  const network = await browserProvider.getNetwork();
+  if (Number(network.chainId) !== 80002) {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: '0x13882' }],
     });
   }
 
-  let stored = [];
-  try {
-    const raw = localStorage.getItem('sc_digital_assets');
-    if (raw) stored = JSON.parse(raw);
-  } catch {}
+  const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
+  const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
-  const nextId = stored.length > 0 
-    ? Math.max(...stored.map(a => Number(a.tokenId) || 0)) + 1 
-    : 1001;
+  const owner = await nft.ownerOf(BigInt(tokenId));
+  if (owner.toLowerCase() !== currentAddress.toLowerCase()) {
+    throw new Error(`You do not own Token #${tokenId}. Current on-chain owner is ${owner.slice(0, 6)}...${owner.slice(-4)}`);
+  }
 
-  const target = (to || '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a').toLowerCase();
-  const fallbackAsset = {
-    tokenId: String(nextId),
-    description: metadataURI || `Asset #${nextId}`,
-    assetClass: assetClass || 'Defence Equipment',
-    assetStatus: 'Active',
-    ownerName: target,
-    createdAt: Date.now(),
-    thumbnailUrl: thumbnailBase64,
-    did: `did:pkh:80002:${target}`,
-    txHash: '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join(''),
+  // Execute standard ERC-721 transferFrom
+  const tx = await nft.transferFrom(currentAddress, target, BigInt(tokenId));
+  const receipt = await tx.wait();
+
+  window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { tokenId, newOwner: target, txHash: tx.hash } }));
+  return {
+    success: true,
+    tokenId,
+    txHash: tx.hash,
+    from: currentAddress,
+    to: target,
+    blockNumber: receipt.blockNumber,
   };
-
-  stored.unshift(fallbackAsset);
-  try {
-    localStorage.setItem('sc_digital_assets', JSON.stringify(stored));
-    window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { asset: fallbackAsset } }));
-  } catch {}
-
-  return fallbackAsset;
 }
 
 // ── Identity ──

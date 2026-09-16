@@ -1,19 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { mockAssets } from '../utils/mockData';
 import { formatDate, getStatusColor } from '../utils/formatters';
-import { fetchAssets, mintAsset } from '../lib/api';
-import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Image as ImageIcon } from 'lucide-react';
+import { fetchAssets, mintAsset, transferAssetOnChain } from '../lib/api';
+import { CONTRACT_ADDRESSES } from '../utils/constants';
+import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, ArrowRight, Copy, Check } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import './Assets.css';
 
 export default function Assets() {
-  const { role, authenticateSession } = useAuth();
+  const { wallet, role, authenticateSession } = useAuth();
   const canMint = role === 'ADMIN';
 
-  const [assets, setAssets] = useState(mockAssets);
+  const [assets, setAssets] = useState([]);
+  const [loadingAssets, setLoadingAssets] = useState(true);
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'my'
   const [showMint, setShowMint] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
   // Mint Form State
   const [description, setDescription] = useState('');
@@ -24,22 +27,27 @@ export default function Assets() {
   const [mintError, setMintError] = useState('');
   const [mintSuccess, setMintSuccess] = useState(null);
 
+  // Transfer Modal State
+  const [transferModal, setTransferModal] = useState({
+    open: false,
+    asset: null,
+    toAddress: '',
+    loading: false,
+    error: '',
+    success: null,
+  });
+
   const loadAssetsData = async () => {
+    setLoadingAssets(true);
     try {
       const data = await fetchAssets();
       if (data && Array.isArray(data)) {
-        setAssets(data.map(a => ({
-          tokenId: a.tokenId,
-          description: (a.chain && a.chain.metadataURI) || a.description || `Asset #${a.tokenId}`,
-          assetClass: (a.chain && a.chain.assetClass) || a.assetClass || 'Enterprise Asset',
-          assetStatus: (a.chain && a.chain.status) || a.assetStatus || 'Active',
-          ownerName: (a.chain && a.chain.owner) || a.owner || a.ownerName || 'Enterprise Custody',
-          createdAt: a.createdAt || Date.now(),
-          thumbnailUrl: a.thumbnailUrl,
-        })));
+        setAssets(data);
       }
-    } catch {
-      console.warn('Backend assets offline, using local state');
+    } catch (err) {
+      console.warn('Failed to load assets:', err);
+    } finally {
+      setLoadingAssets(false);
     }
   };
 
@@ -53,6 +61,12 @@ export default function Assets() {
       window.removeEventListener('storage', handleUpdate);
     };
   }, []);
+
+  const handleCopy = (text, id) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const handleMint = async () => {
     if (!canMint) {
@@ -69,7 +83,7 @@ export default function Assets() {
 
     try {
       const res = await mintAsset({
-        to: toAddress?.trim() || undefined,
+        to: toAddress?.trim() || wallet || undefined,
         assetClass,
         metadataURI: description.trim(),
         file: selectedFile,
@@ -86,66 +100,93 @@ export default function Assets() {
           setMintSuccess(null);
           setDescription('');
           setSelectedFile(null);
-        }, 2800);
+        }, 3200);
       } else {
-        throw new Error('Minting failed: invalid response');
+        throw new Error('Minting failed: no token ID returned');
       }
     } catch (err) {
-      console.warn('Mint error:', err);
-      // Fallback: create local asset to guarantee flawless operation
-      let thumbnailBase64 = null;
-      if (selectedFile) {
-        thumbnailBase64 = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = () => resolve(null);
-          reader.readAsDataURL(selectedFile);
-        });
-      }
-
-      const raw = localStorage.getItem('sc_digital_assets');
-      const stored = raw ? JSON.parse(raw) : [];
-      const nextId = stored.length > 0 
-        ? Math.max(...stored.map(a => Number(a.tokenId) || 0)) + 1 
-        : 1001;
-
-      const target = (toAddress?.trim() || '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a').toLowerCase();
-      const fallbackAsset = {
-        tokenId: String(nextId),
-        description: description.trim(),
-        assetClass: assetClass || 'Defence Equipment',
-        assetStatus: 'Active',
-        ownerName: target,
-        createdAt: Date.now(),
-        thumbnailUrl: thumbnailBase64,
-        did: `did:pkh:80002:${target}`,
-        txHash: '0x' + Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join(''),
-      };
-
-      stored.unshift(fallbackAsset);
-      localStorage.setItem('sc_digital_assets', JSON.stringify(stored));
-
-      setMintSuccess({
-        tokenId: fallbackAsset.tokenId,
-        txHash: fallbackAsset.txHash,
-      });
-      await loadAssetsData();
-      setTimeout(() => {
-        setShowMint(false);
-        setMintSuccess(null);
-        setDescription('');
-        setSelectedFile(null);
-      }, 2800);
+      console.error('Mint execution error:', err);
+      setMintError(err.message || 'On-chain minting failed');
     } finally {
       setMintLoading(false);
     }
   };
 
-  const filtered = assets.filter(a =>
+  const openTransferModal = (asset) => {
+    setTransferModal({
+      open: true,
+      asset,
+      toAddress: '',
+      loading: false,
+      error: '',
+      success: null,
+    });
+  };
+
+  const closeTransferModal = () => {
+    setTransferModal({
+      open: false,
+      asset: null,
+      toAddress: '',
+      loading: false,
+      error: '',
+      success: null,
+    });
+  };
+
+  const handleTransfer = async () => {
+    if (!transferModal.asset) return;
+    const dest = transferModal.toAddress?.trim();
+    if (!dest || !dest.startsWith('0x') || dest.length !== 42) {
+      setTransferModal(prev => ({ ...prev, error: 'Valid 0x recipient address required' }));
+      return;
+    }
+
+    setTransferModal(prev => ({ ...prev, loading: true, error: '', success: null }));
+
+    try {
+      const res = await transferAssetOnChain({
+        tokenId: transferModal.asset.tokenId,
+        toAddress: dest,
+      });
+
+      setTransferModal(prev => ({
+        ...prev,
+        loading: false,
+        success: {
+          txHash: res.txHash,
+          to: dest,
+        },
+      }));
+
+      await loadAssetsData();
+      setTimeout(() => {
+        closeTransferModal();
+      }, 3500);
+    } catch (err) {
+      console.error('Transfer execution error:', err);
+      setTransferModal(prev => ({
+        ...prev,
+        loading: false,
+        error: err.message || 'On-chain transfer failed',
+      }));
+    }
+  };
+
+  const myAssets = assets.filter(a =>
+    wallet && typeof a.ownerName === 'string' && a.ownerName.toLowerCase() === wallet.toLowerCase()
+  );
+
+  const displayedList = activeTab === 'my' ? myAssets : assets;
+
+  const filtered = displayedList.filter(a =>
     (a.description || '').toLowerCase().includes(search.toLowerCase()) ||
     String(a.tokenId).includes(search) || 
-    (a.assetClass || '').toLowerCase().includes(search.toLowerCase())
+    (a.assetClass || '').toLowerCase().includes(search.toLowerCase()) ||
+    (a.ownerName || '').toLowerCase().includes(search.toLowerCase())
   );
+
+  const nftContractAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
 
   return (
     <div className="page">
@@ -153,113 +194,175 @@ export default function Assets() {
         <div className="flex items-center justify-between">
           <div>
             <h1>Digital Assets</h1>
-            <p>ERC-721 enterprise asset registry on Polygon Amoy</p>
+            <p>ERC-721 enterprise asset registry on Polygon Amoy ({nftContractAddr.slice(0, 6)}...{nftContractAddr.slice(-4)})</p>
           </div>
           {canMint && (
             <button className="btn btn-primary" onClick={() => setShowMint(true)}>
-              <Plus size={16} /> Mint Asset
+              <Plus size={16} /> Mint Asset On-Chain
             </button>
           )}
         </div>
       </div>
 
+      {/* Tabs & Search Filter */}
       <div className="card" style={{ marginBottom: 'var(--space-lg)', padding: 'var(--space-md)' }}>
-        <div className="search-input-wrap">
-          <Search size={16} className="search-icon" />
-          <input 
-            className="input search-input" 
-            placeholder="Search assets by ID, class, or description..." 
-            value={search} 
-            onChange={e => setSearch(e.target.value)} 
-          />
+        <div className="flex items-center justify-between gap-md" style={{ flexWrap: 'wrap' }}>
+          <div className="flex gap-sm">
+            <button 
+              className={`btn btn-sm ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setActiveTab('all')}
+            >
+              All Assets ({assets.length})
+            </button>
+            <button 
+              className={`btn btn-sm ${activeTab === 'my' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setActiveTab('my')}
+            >
+              <Wallet size={14} /> My Wallet Assets ({myAssets.length})
+            </button>
+          </div>
+
+          <div className="search-input-wrap" style={{ flex: 1, minWidth: 260 }}>
+            <Search size={16} className="search-icon" />
+            <input 
+              className="input search-input" 
+              placeholder="Search assets by ID, class, owner, description..." 
+              value={search} 
+              onChange={e => setSearch(e.target.value)} 
+            />
+          </div>
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loadingAssets ? (
+        <div className="card flex items-center justify-center p-5">
+          <div className="flex items-center gap-md text-secondary">
+            <Loader2 size={24} className="spin" />
+            <span>Scanning Polygon Amoy for on-chain assets...</span>
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="card">
           <EmptyState 
             icon={Gem} 
-            message="No digital assets" 
-            description={canMint ? "Mint your first NFT asset to begin tracking." : "No digital assets allocated to your account."} 
+            message={activeTab === 'my' ? "No assets in your wallet" : "No digital assets"} 
+            description={activeTab === 'my' 
+              ? (wallet ? `No NFTs are currently owned by ${wallet.slice(0,6)}...${wallet.slice(-4)}. Mint one or have someone transfer one to this address.` : "Connect your wallet to view your owned NFTs.") 
+              : (canMint ? "Mint your first on-chain NFT asset to begin tracking." : "No digital assets allocated to your account.")
+            } 
           />
         </div>
       ) : (
         <div className="grid-3">
-          {filtered.map(asset => (
-            <div key={asset.tokenId} className="card card-interactive asset-card">
-              <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-md)' }}>
-                <div className="asset-token-id">
-                  <Gem size={16} style={{ color: 'var(--status-pending)' }} />
-                  <span className="font-mono">#{asset.tokenId}</span>
+          {filtered.map(asset => {
+            const isMyAsset = wallet && typeof asset.ownerName === 'string' && asset.ownerName.toLowerCase() === wallet.toLowerCase();
+            return (
+              <div key={asset.tokenId} className="card card-interactive asset-card">
+                <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-md)' }}>
+                  <div className="asset-token-id">
+                    <Gem size={16} style={{ color: 'var(--status-pending)' }} />
+                    <span className="font-mono">#{asset.tokenId}</span>
+                  </div>
+                  <div className="flex items-center gap-xs">
+                    {isMyAsset && (
+                      <span className="badge badge-primary font-mono" style={{ background: '#2563EB', color: '#fff', fontSize: '0.72rem', padding: '2px 6px' }}>
+                        YOU (Owner)
+                      </span>
+                    )}
+                    <span className={`badge badge-${getStatusColor(asset.assetStatus)}`}>{asset.assetStatus}</span>
+                  </div>
                 </div>
-                <span className={`badge badge-${getStatusColor(asset.assetStatus)}`}>{asset.assetStatus}</span>
-              </div>
-              
-              {asset.thumbnailUrl && (
-                <div style={{ height: 120, marginBottom: 'var(--space-md)', overflow: 'hidden', borderRadius: 8, background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <img src={asset.thumbnailUrl} alt="Thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none'; }} />
-                </div>
-              )}
+                
+                {asset.thumbnailUrl ? (
+                  <div style={{ height: 140, marginBottom: 'var(--space-md)', overflow: 'hidden', borderRadius: 8, background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img src={asset.thumbnailUrl} alt="Thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                  </div>
+                ) : (
+                  <div style={{ height: 110, marginBottom: 'var(--space-md)', borderRadius: 8, background: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B' }}>
+                    <Gem size={36} style={{ opacity: 0.3 }} />
+                  </div>
+                )}
 
-              <h4 style={{ marginBottom: 'var(--space-xs)' }}>{asset.description}</h4>
-              <div className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>{asset.assetClass}</div>
-              <div className="divider" />
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs text-tertiary">Owner</div>
-                  <div className="text-sm font-mono">{typeof asset.ownerName === 'string' && asset.ownerName.startsWith('0x') ? `${asset.ownerName.slice(0, 6)}...${asset.ownerName.slice(-4)}` : asset.ownerName}</div>
+                <h4 style={{ marginBottom: 'var(--space-xs)' }}>{asset.description}</h4>
+                <div className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>{asset.assetClass}</div>
+                <div className="divider" />
+                
+                <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-sm)' }}>
+                  <div>
+                    <div className="text-xs text-tertiary">On-Chain Owner</div>
+                    <div className="flex items-center gap-xs">
+                      <span className="text-sm font-mono">
+                        {typeof asset.ownerName === 'string' && asset.ownerName.startsWith('0x') 
+                          ? `${asset.ownerName.slice(0, 6)}...${asset.ownerName.slice(-4)}` 
+                          : asset.ownerName}
+                      </span>
+                      {typeof asset.ownerName === 'string' && asset.ownerName.startsWith('0x') && (
+                        <button 
+                          className="btn btn-ghost btn-sm" 
+                          style={{ padding: '2px 4px', height: 'auto' }}
+                          title="Copy address"
+                          onClick={() => handleCopy(asset.ownerName, asset.tokenId)}
+                        >
+                          {copiedId === asset.tokenId ? <Check size={12} style={{ color: '#10B981' }} /> : <Copy size={12} />}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div className="text-xs text-tertiary">Minted</div>
+                    <div className="text-sm">{formatDate(asset.createdAt)}</div>
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="text-xs text-tertiary">Created</div>
-                  <div className="text-sm">{formatDate(asset.createdAt)}</div>
+
+                <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>
+                  <button 
+                    className="btn btn-ghost btn-sm" 
+                    style={{ flex: 1 }} 
+                    onClick={() => window.open(`https://amoy.polygonscan.com/token/${nftContractAddr}?a=${asset.tokenId}`, '_blank')}
+                  >
+                    Polygonscan <ExternalLink size={12} />
+                  </button>
+
+                  {(isMyAsset || canMint) && (
+                    <button 
+                      className="btn btn-secondary btn-sm" 
+                      style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                      onClick={() => openTransferModal(asset)}
+                    >
+                      <Send size={12} /> Transfer
+                    </button>
+                  )}
                 </div>
               </div>
-              <button className="btn btn-ghost btn-sm" style={{ marginTop: 'var(--space-md)', width: '100%' }} onClick={() => window.open(`https://amoy.polygonscan.com/token/${asset.tokenId}`, '_blank')}>
-                View on Polygon <ExternalLink size={12} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
+      {/* Mint Modal */}
       {showMint && canMint && (
         <div className="modal-overlay" onClick={() => setShowMint(false)}>
           <div className="modal-content card animate-fade-scale" onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginBottom: 'var(--space-lg)' }}>Mint New Asset (Admin Role Required)</h3>
+            <h3 style={{ marginBottom: 'var(--space-xs)' }}>Mint New Asset On-Chain</h3>
+            <p className="text-xs text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
+              Broadcasts an ERC-721 mint transaction to Polygon Amoy. Requires wallet approval.
+            </p>
             
             {mintError && (
               <div className="flex items-center justify-between gap-sm p-3 rounded text-sm mb-3" style={{ background: '#FEE2E2', color: '#991B1B' }}>
                 <div className="flex items-center gap-sm">
                   <AlertCircle size={16} /> <span>{mintError}</span>
                 </div>
-                {(mintError.toLowerCase().includes('auth') || mintError.toLowerCase().includes('token') || mintError.toLowerCase().includes('session')) && (
-                  <button 
-                    className="btn btn-sm btn-primary"
-                    style={{ fontSize: '0.75rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
-                    onClick={async () => {
-                      try {
-                        setMintLoading(true);
-                        await authenticateSession();
-                        setMintError('');
-                      } catch (e) {
-                        setMintError(e.message);
-                      } finally {
-                        setMintLoading(false);
-                      }
-                    }}
-                  >
-                    Authenticate Now
-                  </button>
-                )}
               </div>
             )}
+
             {mintSuccess && (
               <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46' }}>
                 <CheckCircle2 size={16} />
                 <span>
-                  Minted Token #{mintSuccess.tokenId || '1'}
+                  Successfully Minted Token #{mintSuccess.tokenId}!
                   {mintSuccess.txHash && (
-                    <> — <a href={`https://amoy.polygonscan.com/tx/${mintSuccess.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600 }}>View Tx on Polygonscan</a></>
+                    <> — <a href={`https://amoy.polygonscan.com/tx/${mintSuccess.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600 }}>View on Polygonscan</a></>
                   )}
                 </span>
               </div>
@@ -295,14 +398,14 @@ export default function Assets() {
                 <label>Allocate To (Wallet Address / Account)</label>
                 <input 
                   className="input font-mono" 
-                  placeholder="0x... (or leave empty to retain in custody)" 
+                  placeholder={wallet ? `Default: Your connected wallet (${wallet.slice(0,6)}...${wallet.slice(-4)})` : "0x..."}
                   value={toAddress}
                   onChange={e => setToAddress(e.target.value)}
                 />
               </div>
 
               <div className="input-group">
-                <label>Encrypted Thumbnail Asset</label>
+                <label>Thumbnail Asset (Optional)</label>
                 <input 
                   type="file" 
                   className="input" 
@@ -320,9 +423,71 @@ export default function Assets() {
                   onClick={handleMint}
                   disabled={mintLoading}
                 >
-                  {mintLoading ? <><Loader2 size={16} className="spin" /> Minting...</> : 'Mint & Allocate'}
+                  {mintLoading ? <><Loader2 size={16} className="spin" /> Confirming in Wallet...</> : 'Mint On-Chain (MetaMask)'}
                 </button>
                 <button className="btn btn-secondary" onClick={() => setShowMint(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {transferModal.open && transferModal.asset && (
+        <div className="modal-overlay" onClick={closeTransferModal}>
+          <div className="modal-content card animate-fade-scale" onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 'var(--space-xs)' }}>
+              Transfer Token #{transferModal.asset.tokenId} On-Chain
+            </h3>
+            <p className="text-xs text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
+              Direct ERC-721 transfer executed via MetaMask on Polygon Amoy.
+            </p>
+
+            <div className="card p-3 mb-3" style={{ background: '#0F172A', border: '1px solid #1E293B' }}>
+              <div className="text-xs text-tertiary">Asset Details</div>
+              <div className="font-semibold text-sm">{transferModal.asset.description}</div>
+              <div className="text-xs text-secondary font-mono">Current Owner: {transferModal.asset.ownerName}</div>
+            </div>
+
+            {transferModal.error && (
+              <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#FEE2E2', color: '#991B1B' }}>
+                <AlertCircle size={16} /> <span>{transferModal.error}</span>
+              </div>
+            )}
+
+            {transferModal.success && (
+              <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46' }}>
+                <CheckCircle2 size={16} />
+                <span>
+                  Transferred successfully!
+                  {transferModal.success.txHash && (
+                    <> — <a href={`https://amoy.polygonscan.com/tx/${transferModal.success.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600 }}>View on Polygonscan</a></>
+                  )}
+                </span>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-md">
+              <div className="input-group">
+                <label>Recipient Wallet Address</label>
+                <input 
+                  className="input font-mono" 
+                  placeholder="0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c"
+                  value={transferModal.toAddress}
+                  onChange={e => setTransferModal(prev => ({ ...prev, toAddress: e.target.value }))}
+                />
+              </div>
+
+              <div className="flex gap-md" style={{ marginTop: 'var(--space-md)' }}>
+                <button 
+                  className="btn btn-primary" 
+                  style={{ flex: 1 }} 
+                  onClick={handleTransfer}
+                  disabled={transferModal.loading}
+                >
+                  {transferModal.loading ? <><Loader2 size={16} className="spin" /> Confirming in Wallet...</> : 'Execute On-Chain Transfer'}
+                </button>
+                <button className="btn btn-secondary" onClick={closeTransferModal}>Cancel</button>
               </div>
             </div>
           </div>
