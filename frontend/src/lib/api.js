@@ -524,10 +524,62 @@ export async function fetchAssets() {
   return onChainAssets;
 }
 
-export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl }) {
+export async function compressImage(file, maxDimension = 500, quality = 0.85) {
+  if (!file || !file.type || !file.type.startsWith('image/')) return null;
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > maxDimension) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(null);
+              return;
+            }
+            const optimizedFile = new File(
+              [blob],
+              file.name.replace(/\.[^/.]+$/, '') + '.jpg',
+              { type: 'image/jpeg', lastModified: Date.now() }
+            );
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            resolve({ file: optimizedFile, dataUrl });
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => resolve(null);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, onProgress }) {
   // 1. Direct Web3 / MetaMask on-chain execution if wallet is available
   if (typeof window !== 'undefined' && window.ethereum) {
     try {
+      if (onProgress) onProgress('Connecting to wallet...');
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const signer = await browserProvider.getSigner();
       const currentAddress = await signer.getAddress();
@@ -564,20 +616,37 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl })
       const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
       const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
-      // Construct official ERC-721 metadata URI with real image for Polygonscan compatibility
+      // Fast cloud upload of thumbnail to Supabase S3
       let finalMetadataURI = metadataURI;
       let minioImageUrl = imageUrl || '';
 
-      if (file && isBackendConfigured()) {
+      if (file) {
+        if (onProgress) onProgress('Uploading image to Supabase...');
         try {
+          // Compress on the fly if needed
+          let fileToUpload = file;
+          try {
+            const compressed = await compressImage(file, 480, 0.82);
+            if (compressed?.file) {
+              fileToUpload = compressed.file;
+            }
+          } catch {}
+
           const thumbForm = new FormData();
-          thumbForm.append('thumbnail', file);
+          thumbForm.append('thumbnail', fileToUpload);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 6000);
+
           const thumbRes = await fetch(`${API_BASE}/assets/upload-thumbnail`, {
             method: 'POST',
             body: thumbForm,
             headers: { ...getAuthHeaders() },
             credentials: 'include',
+            signal: controller.signal,
           });
+          clearTimeout(timeoutId);
+
           if (thumbRes.ok) {
             const thumbData = await thumbRes.json();
             if (thumbData.publicUrl) {
@@ -585,9 +654,11 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl })
             }
           }
         } catch (e) {
-          console.warn('[MinIO] Pre-mint thumbnail upload skipped, using provided asset image');
+          console.warn('[Storage] Fast thumbnail upload skipped/timed out, using lightweight fallback');
         }
       }
+
+      if (onProgress) onProgress('Preparing on-chain metadata...');
 
       if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
         finalMetadataURI = buildErc721MetadataURI({
@@ -598,13 +669,29 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl })
         });
       }
 
-      const tx = await nft.mint(
-        targetAddress,
-        didHash,
-        assetClass || 'Defence Equipment',
-        finalMetadataURI
-      );
+      if (onProgress) onProgress('Confirming in wallet...');
 
+      // Execute on-chain mint with explicit gas limit to avoid slow RPC gas estimation hang
+      let tx;
+      try {
+        tx = await nft.mint(
+          targetAddress,
+          didHash,
+          assetClass || 'Defence Equipment',
+          finalMetadataURI,
+          { gasLimit: 280000 }
+        );
+      } catch (gasErr) {
+        // Fallback to auto-estimated gas if node requires dynamic gas calculation
+        tx = await nft.mint(
+          targetAddress,
+          didHash,
+          assetClass || 'Defence Equipment',
+          finalMetadataURI
+        );
+      }
+
+      if (onProgress) onProgress('Mining transaction on Polygon Amoy...');
       const receipt = await tx.wait();
       let tokenId = null;
 

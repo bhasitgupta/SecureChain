@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, getStatusColor } from '../utils/formatters';
-import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain } from '../lib/api';
+import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, compressImage } from '../lib/api';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, RefreshCw, ImageOff } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
@@ -28,6 +28,7 @@ export default function Assets() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileBase64, setFileBase64] = useState(null);
   const [mintLoading, setMintLoading] = useState(false);
+  const [mintStep, setMintStep] = useState('');
   const [mintError, setMintError] = useState('');
   const [mintSuccess, setMintSuccess] = useState(null);
 
@@ -73,10 +74,18 @@ export default function Assets() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleFileSelection = (e) => {
+  const handleFileSelection = async (e) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
+      try {
+        const compressed = await compressImage(file, 480, 0.82);
+        if (compressed) {
+          setFileBase64(compressed.dataUrl);
+          setSelectedFile(compressed.file);
+          return;
+        }
+      } catch {}
       const reader = new FileReader();
       reader.onloadend = () => {
         setFileBase64(reader.result);
@@ -98,6 +107,7 @@ export default function Assets() {
       return;
     }
     setMintLoading(true);
+    setMintStep('Preparing asset...');
     setMintError('');
     setMintSuccess(null);
 
@@ -110,6 +120,7 @@ export default function Assets() {
         metadataURI: description.trim(),
         file: selectedFile,
         imageUrl: finalImage,
+        onProgress: (stepText) => setMintStep(stepText),
       });
 
       if (res && res.tokenId) {
@@ -125,6 +136,7 @@ export default function Assets() {
           setSelectedFile(null);
           setFileBase64(null);
           setImageUrlInput('');
+          setMintStep('');
         }, 3200);
       } else {
         throw new Error('Minting failed: no token ID returned');
@@ -134,6 +146,7 @@ export default function Assets() {
       setMintError(err.message || 'On-chain minting failed');
     } finally {
       setMintLoading(false);
+      setMintStep('');
     }
   };
 
@@ -518,7 +531,7 @@ export default function Assets() {
                   onClick={handleMint}
                   disabled={mintLoading}
                 >
-                  {mintLoading ? <><Loader2 size={16} className="spin" /> Confirming in Wallet...</> : 'Mint On-Chain (MetaMask)'}
+                  {mintLoading ? <><Loader2 size={16} className="spin" /> {mintStep || 'Confirming in Wallet...'}</> : 'Mint On-Chain (MetaMask)'}
                 </button>
                 <button className="btn btn-secondary" onClick={() => setShowMint(false)}>Cancel</button>
               </div>
