@@ -412,26 +412,20 @@ export function saveAssetThumbnail(tokenId, dataUrlOrBlob) {
 }
 
 export async function getAmoyProvider() {
-  // Try browser MetaMask provider first if available
-  if (typeof window !== 'undefined' && window.ethereum) {
-    try {
-      const bp = new ethers.BrowserProvider(window.ethereum);
-      const net = await bp.getNetwork();
-      if (Number(net.chainId) === 80002) {
-        return bp;
-      }
-    } catch {}
-  }
-
+  // For read-only calls, use public JSON-RPC directly — never touch MetaMask
   for (const rpc of AMOY_RPCS) {
     try {
       const p = new ethers.JsonRpcProvider(rpc);
-      await p.getBlockNumber();
+      await Promise.race([
+        p.getBlockNumber(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), 3000))
+      ]);
       return p;
     } catch {}
   }
   return new ethers.JsonRpcProvider('https://polygon-amoy-bor-rpc.publicnode.com');
 }
+
 
 // ── Assets ──
 export async function fetchAssets() {
@@ -439,13 +433,8 @@ export async function fetchAssets() {
   const onChainAssets = [];
   const seenIds = new Set();
 
-  // Try multiple providers in sequence until one succeeds
+  // Use only public JSON-RPC for read-only queries — never touch MetaMask for reads
   const providersToTry = [];
-  if (typeof window !== 'undefined' && window.ethereum) {
-    try {
-      providersToTry.push(new ethers.BrowserProvider(window.ethereum));
-    } catch {}
-  }
   for (const rpc of AMOY_RPCS) {
     try {
       providersToTry.push(new ethers.JsonRpcProvider(rpc));
@@ -576,68 +565,67 @@ export async function compressImage(file, maxDimension = 500, quality = 0.85) {
 }
 
 export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, onProgress }) {
-  // 1. Direct Web3 / MetaMask on-chain execution if wallet is available
+  // ── FAST-PATH: Direct MetaMask on-chain execution ──
   if (typeof window !== 'undefined' && window.ethereum) {
     try {
-      if (onProgress) onProgress('Connecting to wallet...');
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await browserProvider.getSigner();
-      const currentAddress = await signer.getAddress();
+      // STEP 1: Instant wallet unlock with hard timeout (no ethers wrapper overhead)
+      if (onProgress) onProgress('Opening wallet...');
+
+      // Race eth_requestAccounts against an 8-second deadline
+      const accountsPromise = window.ethereum.request({ method: 'eth_requestAccounts' });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Wallet connection timed out. Please unlock MetaMask and try again.')), 8000)
+      );
+      const accounts = await Promise.race([accountsPromise, timeoutPromise]);
+
+      if (!accounts || accounts.length === 0) {
+        throw new Error('No accounts returned. Please unlock your wallet.');
+      }
+
+      const currentAddress = accounts[0].toLowerCase();
       const targetAddress = (to || currentAddress).trim().toLowerCase();
 
-      // Ensure network is Polygon Amoy (80002 / 0x13882)
-      const network = await browserProvider.getNetwork();
-      if (Number(network.chainId) !== 80002) {
-        try {
+      // STEP 2: Pre-flight chain switch (fire-and-forget, non-blocking)
+      // MetaMask will also auto-prompt chain switch on tx if needed
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x13882' }],
+        });
+      } catch (switchErr) {
+        if (switchErr.code === 4902) {
           await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x13882' }],
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x13882',
+              chainName: 'Polygon Amoy Testnet',
+              nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+              rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://rpc-amoy.polygon.technology'],
+              blockExplorerUrls: ['https://amoy.polygonscan.com'],
+            }],
           });
-        } catch (switchErr) {
-          if (switchErr.code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: '0x13882',
-                chainName: 'Polygon Amoy Testnet',
-                nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
-                rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://rpc-amoy.polygon.technology'],
-                blockExplorerUrls: ['https://amoy.polygonscan.com'],
-              }],
-            });
-          } else {
-            throw switchErr;
-          }
         }
+        // If user rejects chain switch, we'll still try — MetaMask may prompt again on tx
       }
+
+      // STEP 3: Build signer AFTER accounts are unlocked (instant — no RPC round-trip)
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await browserProvider.getSigner();
 
       const did = `did:pkh:eip155:80002:${targetAddress}`;
       const didHash = ethers.keccak256(ethers.toUtf8Bytes(did));
       const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
       const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
-      // Fast cloud upload of thumbnail to Supabase S3
-      let finalMetadataURI = metadataURI;
+      // STEP 4: Parallelize thumbnail upload + metadata prep
+      // File is already compressed by handleFileSelection, so NO re-compression
       let minioImageUrl = imageUrl || '';
-
-      if (file) {
-        if (onProgress) onProgress('Uploading image to Supabase...');
+      const thumbnailUploadPromise = (file) ? (async () => {
         try {
-          // Compress on the fly if needed
-          let fileToUpload = file;
-          try {
-            const compressed = await compressImage(file, 480, 0.82);
-            if (compressed?.file) {
-              fileToUpload = compressed.file;
-            }
-          } catch {}
-
           const thumbForm = new FormData();
-          thumbForm.append('thumbnail', fileToUpload);
-          
+          thumbForm.append('thumbnail', file);
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000);
-
+          const tid = setTimeout(() => controller.abort(), 5000);
           const thumbRes = await fetch(`${API_BASE}/assets/upload-thumbnail`, {
             method: 'POST',
             body: thumbForm,
@@ -645,21 +633,24 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
             credentials: 'include',
             signal: controller.signal,
           });
-          clearTimeout(timeoutId);
-
+          clearTimeout(tid);
           if (thumbRes.ok) {
             const thumbData = await thumbRes.json();
-            if (thumbData.publicUrl) {
-              minioImageUrl = thumbData.publicUrl;
-            }
+            if (thumbData.publicUrl) return thumbData.publicUrl;
           }
-        } catch (e) {
-          console.warn('[Storage] Fast thumbnail upload skipped/timed out, using lightweight fallback');
+        } catch {
+          console.warn('[Storage] Thumbnail upload skipped/timed out');
         }
-      }
+        return '';
+      })() : Promise.resolve('');
 
-      if (onProgress) onProgress('Preparing on-chain metadata...');
+      if (onProgress) onProgress('Preparing metadata...');
 
+      // Wait for thumbnail (runs in parallel with everything above)
+      const uploadedUrl = await thumbnailUploadPromise;
+      if (uploadedUrl) minioImageUrl = uploadedUrl;
+
+      let finalMetadataURI = metadataURI;
       if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
         finalMetadataURI = buildErc721MetadataURI({
           name: metadataURI || 'Enterprise Digital Asset',
@@ -669,29 +660,18 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         });
       }
 
-      if (onProgress) onProgress('Confirming in wallet...');
+      // STEP 5: Fire the mint transaction — single call, explicit gas, no fallback retry
+      if (onProgress) onProgress('Confirm in MetaMask popup...');
 
-      // Execute on-chain mint with explicit gas limit to avoid slow RPC gas estimation hang
-      let tx;
-      try {
-        tx = await nft.mint(
-          targetAddress,
-          didHash,
-          assetClass || 'Defence Equipment',
-          finalMetadataURI,
-          { gasLimit: 280000 }
-        );
-      } catch (gasErr) {
-        // Fallback to auto-estimated gas if node requires dynamic gas calculation
-        tx = await nft.mint(
-          targetAddress,
-          didHash,
-          assetClass || 'Defence Equipment',
-          finalMetadataURI
-        );
-      }
+      const tx = await nft.mint(
+        targetAddress,
+        didHash,
+        assetClass || 'Defence Equipment',
+        finalMetadataURI,
+        { gasLimit: 280000 }
+      );
 
-      if (onProgress) onProgress('Mining transaction on Polygon Amoy...');
+      if (onProgress) onProgress('Mining on Polygon Amoy...');
       const receipt = await tx.wait();
       let tokenId = null;
 
@@ -705,7 +685,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         } catch {}
       }
 
-      // If thumbnail was uploaded, save locally keyed by tokenId
+      // Save thumbnail locally keyed by tokenId (non-blocking)
       if (file && tokenId) {
         try {
           const reader = new FileReader();
@@ -720,19 +700,19 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         } catch {}
       }
 
-      // Notify backend if online
+      // Notify backend (fire-and-forget, non-blocking)
       try {
         const formData = new FormData();
         formData.append('to', targetAddress);
         formData.append('assetClass', assetClass || 'Defence Equipment');
         formData.append('metadataURI', metadataURI || 'Enterprise Asset');
         if (file) formData.append('thumbnail', file);
-        await fetch(`${API_BASE}/assets/mint`, {
+        fetch(`${API_BASE}/assets/mint`, {
           method: 'POST',
           body: formData,
           headers: { ...getAuthHeaders() },
           credentials: 'include',
-        });
+        }).catch(() => {});
       } catch {}
 
       const result = {
@@ -754,7 +734,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
     }
   }
 
-  // 2. Backend gateway relayer fallback
+  // ── FALLBACK: Backend gateway relayer ──
   const formData = new FormData();
   if (to) formData.append('to', to);
   if (assetClass) formData.append('assetClass', assetClass);
@@ -783,34 +763,56 @@ export async function transferAssetOnChain({ tokenId, toAddress }) {
     throw new Error('MetaMask or Web3 wallet is required to transfer assets on-chain.');
   }
 
-  const browserProvider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await browserProvider.getSigner();
-  const currentAddress = await signer.getAddress();
-  const target = toAddress.trim();
+  // Fast wallet unlock with 8s timeout
+  const accountsPromise = window.ethereum.request({ method: 'eth_requestAccounts' });
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Wallet connection timed out. Please unlock MetaMask and try again.')), 8000)
+  );
+  const accounts = await Promise.race([accountsPromise, timeoutPromise]);
+  if (!accounts || accounts.length === 0) {
+    throw new Error('No accounts returned. Please unlock your wallet.');
+  }
 
+  const target = toAddress.trim();
   if (!ethers.isAddress(target)) {
     throw new Error('Invalid recipient address: ' + toAddress);
   }
 
-  // Ensure network is Polygon Amoy (80002 / 0x13882)
-  const network = await browserProvider.getNetwork();
-  if (Number(network.chainId) !== 80002) {
+  // Pre-flight chain switch (non-fatal if rejected)
+  try {
     await window.ethereum.request({
       method: 'wallet_switchEthereumChain',
       params: [{ chainId: '0x13882' }],
     });
+  } catch (switchErr) {
+    if (switchErr.code === 4902) {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: '0x13882',
+          chainName: 'Polygon Amoy Testnet',
+          nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+          rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://rpc-amoy.polygon.technology'],
+          blockExplorerUrls: ['https://amoy.polygonscan.com'],
+        }],
+      });
+    }
   }
+
+  const browserProvider = new ethers.BrowserProvider(window.ethereum);
+  const signer = await browserProvider.getSigner();
+  const currentAddress = (await signer.getAddress()).toLowerCase();
 
   const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
   const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
   const owner = await nft.ownerOf(BigInt(tokenId));
-  if (owner.toLowerCase() !== currentAddress.toLowerCase()) {
+  if (owner.toLowerCase() !== currentAddress) {
     throw new Error(`You do not own Token #${tokenId}. Current on-chain owner is ${owner.slice(0, 6)}...${owner.slice(-4)}`);
   }
 
-  // Execute standard ERC-721 transferFrom
-  const tx = await nft.transferFrom(currentAddress, target, BigInt(tokenId));
+  // Execute standard ERC-721 transferFrom with explicit gas
+  const tx = await nft.transferFrom(currentAddress, target, BigInt(tokenId), { gasLimit: 120000 });
   const receipt = await tx.wait();
 
   window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { tokenId, newOwner: target, txHash: tx.hash } }));
@@ -823,6 +825,7 @@ export async function transferAssetOnChain({ tokenId, toAddress }) {
     blockNumber: receipt.blockNumber,
   };
 }
+
 
 // ── Identity ──
 export async function fetchIdentities() {
