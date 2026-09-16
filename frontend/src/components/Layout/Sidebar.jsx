@@ -77,20 +77,47 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
           markerColor="#BBD5DA"
           showIndex={true}
           showMarker={!collapsed || mobileOpen}
-          proximityRadius={75}
-          maxShift={(collapsed && !mobileOpen) ? 0 : 4}
+          proximityRadius={80}
+          maxShift={(collapsed && !mobileOpen) ? 0 : 3}
           falloff="smooth"
-          markerLength={18}
-          markerGap={6}
+          markerLength={20}
+          markerGap={7}
           tickScale={0.5}
           scaleTick={true}
-          itemGap={13}
-          fontSize={0.78}
-          smoothing={80}
+          itemGap={18}
+          fontSize={0.88}
+          smoothing={75}
           activeIndex={activeIndex}
           onItemClick={handleItemClick}
           className="securechain-linesidebar"
         />
+
+        {(!collapsed || mobileOpen) && (
+          <div className="sidebar-telemetry-card">
+            <div className="telemetry-header">
+              <span className="telemetry-title">NETWORK TELEMETRY</span>
+              <span className="telemetry-badge">LIVE</span>
+            </div>
+            <div className="telemetry-rows">
+              <div className="telemetry-row">
+                <span className="telemetry-key">Consensus</span>
+                <span className="telemetry-val font-mono">Amoy 80002</span>
+              </div>
+              <div className="telemetry-row">
+                <span className="telemetry-key">State Anchor</span>
+                <span className="telemetry-val">Keccak-256</span>
+              </div>
+              <div className="telemetry-row">
+                <span className="telemetry-key">Auth Guard</span>
+                <span className="telemetry-val">SIWE + EIP-712</span>
+              </div>
+              <div className="telemetry-row">
+                <span className="telemetry-key">Cryptographic Proof</span>
+                <span className="telemetry-val font-mono">SHA-256</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer Status Badge */}

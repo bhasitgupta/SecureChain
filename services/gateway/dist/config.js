@@ -14,7 +14,7 @@ exports.config = {
     host: process.env.HOST || '0.0.0.0',
     frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
     // Chain
-    polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology',
+    polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-amoy.drpc.org',
     chainId: parseInt(process.env.CHAIN_ID || '80002', 10),
     // Contract Addresses (0x...)
     iamAddress: (process.env.IAM_ADDRESS || ''),

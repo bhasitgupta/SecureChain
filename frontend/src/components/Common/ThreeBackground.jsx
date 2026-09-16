@@ -107,22 +107,56 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     };
     window.addEventListener('mousemove', onMouseMove, { passive: true });
 
-    // 5. Animation Loop with Visibility Pause
-    let animId;
+    // 5. Animation Loop with Visibility & Focus Pause (Zero-leak / No duplicate rAF)
+    let animId = null;
     let isTabVisible = !document.hidden;
 
-    const onVisibilityChange = () => {
-      isTabVisible = !document.hidden;
-      if (isTabVisible) {
-        animate();
-      } else {
+    const stopLoop = () => {
+      if (animId !== null) {
         cancelAnimationFrame(animId);
+        animId = null;
       }
     };
+
+    const startLoop = () => {
+      stopLoop();
+      if (!document.hidden) {
+        isTabVisible = true;
+        animId = requestAnimationFrame(animate);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        isTabVisible = false;
+        stopLoop();
+      } else {
+        isTabVisible = true;
+        startLoop();
+      }
+    };
+
+    const onWindowBlur = () => {
+      isTabVisible = false;
+      stopLoop();
+    };
+
+    const onWindowFocus = () => {
+      if (!document.hidden) {
+        isTabVisible = true;
+        startLoop();
+      }
+    };
+
     document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('focus', onWindowFocus);
 
     const animate = () => {
-      if (!isTabVisible) return;
+      if (!isTabVisible || document.hidden) {
+        stopLoop();
+        return;
+      }
       animId = requestAnimationFrame(animate);
 
       // Smooth mouse lerp
@@ -183,7 +217,7 @@ export default function ThreeBackground({ opacity = 0.65 }) {
       renderer.render(scene, camera);
     };
 
-    animate();
+    startLoop();
 
     // 6. Resize Handler (Passive & Debounced)
     let resizeTimer;
@@ -201,10 +235,12 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     window.addEventListener('resize', handleResize, { passive: true });
 
     return () => {
-      cancelAnimationFrame(animId);
+      stopLoop();
       clearTimeout(resizeTimer);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('focus', onWindowFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (container && renderer.domElement) {
         container.removeChild(renderer.domElement);

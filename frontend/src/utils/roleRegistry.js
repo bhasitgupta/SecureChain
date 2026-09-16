@@ -1,7 +1,8 @@
 // Role Registry: Authoritative multi-tier role management with Polygon Amoy on-chain verification,
-// global cloud registry synchronization across devices, and persistent local caching.
+// gateway backend database persistence, and resilient local caching.
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, NETWORK } from './constants.js';
+import { fetchAssignedRoles, assignRoleAPI, fetchRolesForAddress } from '../lib/api.js';
 
 const ROLE_REGISTRY_KEY = 'sc_wallet_roles';
 const ROLE_REQUESTS_KEY = 'sc_role_requests';
@@ -17,13 +18,10 @@ export const ROLE_HASHES = {
 // High-speed, verified Polygon Amoy RPC endpoints with automatic failover
 export const AMOY_RPCS = [
   NETWORK.rpcUrl || 'https://polygon-amoy.drpc.org',
-  'https://polygon-amoy.drpc.org',
+  'https://rpc-amoy.polygon.technology',
   'https://polygon-amoy-bor-rpc.publicnode.com',
-  'https://80002.rpc.thirdweb.com',
+  'https://amoy.drpc.org',
 ].filter((url, idx, arr) => url && arr.indexOf(url) === idx);
-
-// Global shared cloud registry object (ensures instant cross-device role sync across laptops & browsers)
-const CLOUD_REGISTRY_URL = 'https://api.restful-api.dev/objects/ff808181a09d98f701a0a6aa0f9f13f1';
 
 // Initial Authoritative Admin & Privileged Role Addresses (Specified by Governance & On-Chain Deployments)
 export const DEFAULT_ROLES = {
@@ -33,7 +31,6 @@ export const DEFAULT_ROLES = {
 };
 
 const DEFAULT_REQUESTS = [];
-
 const memoryStore = {};
 
 function getStoredRoles() {
@@ -55,31 +52,25 @@ function saveStoredRoles(roles) {
       const payload = JSON.stringify(roles);
       window.localStorage.setItem(ROLE_REGISTRY_KEY, payload);
       window.sessionStorage?.setItem(ROLE_REGISTRY_KEY, payload);
-      window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { sync: true } }));
+      window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { roles } }));
       window.dispatchEvent(new Event('storage'));
     }
   } catch (e) {}
 }
 
 /**
- * Synchronize roles from the global cloud registry into local storage
+ * Synchronize roles from the backend database/gateway into local storage
  */
 export async function syncCloudRoles() {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(CLOUD_REGISTRY_URL, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!res.ok) return;
-    const body = await res.json();
-    if (body?.data && typeof body.data === 'object') {
+    const roles = await fetchAssignedRoles();
+    if (roles && typeof roles === 'object' && Object.keys(roles).length > 0) {
       const local = getStoredRoles();
       let changed = false;
 
-      Object.entries(body.data).forEach(([addr, role]) => {
+      Object.entries(roles).forEach(([addr, role]) => {
         const norm = addr.toLowerCase().trim();
-        if (role && role !== 'USER' && local[norm] !== role) {
+        if (norm && role && local[norm] !== role) {
           local[norm] = role;
           changed = true;
         }
@@ -90,11 +81,11 @@ export async function syncCloudRoles() {
       }
     }
   } catch (e) {
-    // Silent failover to on-chain and local defaults
+    // Fallback to local and default store
   }
 }
 
-// Kick off cloud sync on module load
+// Initial sync on module load
 syncCloudRoles();
 
 /**
@@ -104,31 +95,48 @@ export function getRoleForWallet(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase().trim();
 
-  // 1. Authoritative default addresses
-  const defaultRole = DEFAULT_ROLES[normalized];
-
   try {
     const roles = getAllWalletRoles();
-    const assigned = roles[normalized];
-    if (assigned && assigned !== 'USER') {
-      return assigned;
+    if (roles[normalized]) {
+      return roles[normalized];
     }
-    if (defaultRole) {
-      return defaultRole;
+    if (DEFAULT_ROLES[normalized]) {
+      return DEFAULT_ROLES[normalized];
     }
-    return assigned || 'USER';
+    return 'USER';
   } catch (e) {
-    return defaultRole || 'USER';
+    return DEFAULT_ROLES[normalized] || 'USER';
   }
 }
 
 /**
- * Query on-chain IAM contract on Polygon Amoy for authoritative role using multi-RPC fallback
+ * Query on-chain IAM contract on Polygon Amoy for authoritative role using fast timeout and multi-RPC fallback
  */
 export async function checkOnChainRole(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase().trim();
   const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+
+  // 1. Try gateway backend role endpoint first (has direct node connection + DB cache, sub-100ms)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const apiData = await fetchRolesForAddress(normalized);
+    clearTimeout(timer);
+
+    if (apiData?.assignedRole) {
+      return apiData.assignedRole;
+    }
+    if (apiData?.roles) {
+      if (apiData.roles.ADMIN_ROLE) return 'ADMIN';
+      if (apiData.roles.MANAGER_ROLE) return 'MANAGER';
+      if (apiData.roles.AUDITOR_ROLE) return 'AUDITOR';
+      if (apiData.roles.USER_ROLE) return 'USER';
+    }
+  } catch {
+    // Fallback to direct on-chain RPC query
+  }
+
   if (!iamAddr || !iamAddr.startsWith('0x') || iamAddr === '—') {
     return getRoleForWallet(normalized);
   }
@@ -138,23 +146,26 @@ export async function checkOnChainRole(address) {
 
   for (const rpc of AMOY_RPCS) {
     try {
-      const provider = new ethers.JsonRpcProvider(rpc, net, { staticNetwork: net, batchMaxCount: 1 });
+      const fetchReq = new ethers.FetchRequest(rpc);
+      fetchReq.timeout = 2500; // Fast 2.5 second timeout per RPC
+      const provider = new ethers.JsonRpcProvider(fetchReq, net, { staticNetwork: net, batchMaxCount: 1 });
       const iam = new ethers.Contract(iamAddr, abi, provider);
 
-      const [isAdmin, isAuditor, isManager] = await Promise.all([
-        iam.hasRole(ROLE_HASHES.ADMIN, normalized),
-        iam.hasRole(ROLE_HASHES.AUDITOR, normalized),
-        iam.hasRole(ROLE_HASHES.MANAGER, normalized),
+      const [isAdmin, isManager, isAuditor] = await Promise.race([
+        Promise.all([
+          iam.hasRole(ROLE_HASHES.ADMIN, normalized),
+          iam.hasRole(ROLE_HASHES.MANAGER, normalized),
+          iam.hasRole(ROLE_HASHES.AUDITOR, normalized),
+        ]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), 2500))
       ]);
 
       if (isAdmin) return 'ADMIN';
-      if (isAuditor) return 'AUDITOR';
       if (isManager) return 'MANAGER';
+      if (isAuditor) return 'AUDITOR';
 
-      // Contract responded successfully that address holds no privileged roles
-      return getRoleForWallet(normalized);
+      return 'USER';
     } catch (err) {
-      // Try next healthy RPC endpoint in list
       continue;
     }
   }
@@ -163,37 +174,21 @@ export async function checkOnChainRole(address) {
 }
 
 /**
- * Master role resolver: queries On-Chain first, then Cloud Store, then Local Registry & Defaults.
- * Guaranteed to reliably detect the friend's role across different machines.
+ * Master role resolver: queries On-Chain / Gateway first, then Local Registry & Defaults.
  */
 export async function resolveAuthoritativeRole(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase().trim();
 
-  // Check on-chain Polygon Amoy (highest cryptographic authority)
   try {
     const onChainRole = await checkOnChainRole(normalized);
-    if (onChainRole && onChainRole !== 'USER') {
+    if (onChainRole) {
       const local = getAllWalletRoles();
       local[normalized] = onChainRole;
       saveStoredRoles(local);
       return onChainRole;
     }
   } catch (e) {}
-
-  // Check cloud registry
-  try {
-    await syncCloudRoles();
-    const local = getAllWalletRoles();
-    if (local[normalized] && local[normalized] !== 'USER') {
-      return local[normalized];
-    }
-  } catch (e) {}
-
-  // Check default roles
-  if (DEFAULT_ROLES[normalized]) {
-    return DEFAULT_ROLES[normalized];
-  }
 
   return getRoleForWallet(normalized);
 }
@@ -204,20 +199,17 @@ export async function resolveAuthoritativeRole(address) {
 export function getAllWalletRoles() {
   try {
     const registry = getStoredRoles();
-    
-    // Normalize all existing stored keys
     const normalizedRegistry = {};
+
+    // Load defaults first
+    Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
+      normalizedRegistry[addr.toLowerCase().trim()] = role;
+    });
+
+    // Layer stored/assigned roles on top
     Object.entries(registry).forEach(([k, v]) => {
       if (k && v) {
         normalizedRegistry[k.toLowerCase().trim()] = v;
-      }
-    });
-
-    // Ensure authoritative default roles are present
-    Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
-      const normAddr = addr.toLowerCase().trim();
-      if (!normalizedRegistry[normAddr] || normalizedRegistry[normAddr] === 'USER') {
-        normalizedRegistry[normAddr] = role;
       }
     });
 
@@ -228,7 +220,7 @@ export function getAllWalletRoles() {
 }
 
 /**
- * Assign a role to a wallet address, persist locally, and sync to the cloud across all devices
+ * Assign a role to a wallet address, persist locally, and sync to backend/chain
  */
 export async function setWalletRole(address, role) {
   if (!address) return;
@@ -236,49 +228,35 @@ export async function setWalletRole(address, role) {
   const currentRoles = getAllWalletRoles();
 
   if (role === 'USER') {
-    delete currentRoles[normalized];
+    currentRoles[normalized] = 'USER';
   } else {
     currentRoles[normalized] = role;
   }
 
   saveStoredRoles(currentRoles);
 
-  // Sync to global shared cloud registry
+  // Sync to gateway backend for database persistence & on-chain relayer sync
   try {
-    await fetch(CLOUD_REGISTRY_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'SecureChain_RoleRegistry',
-        data: currentRoles,
-      }),
-    });
+    await assignRoleAPI(normalized, role);
   } catch (e) {
-    console.warn('Cloud role broadcast skipped/failed:', e);
+    console.warn('Backend role assignment sync warning:', e);
   }
 }
 
 /**
- * Remove an assigned role (downgrade to USER) and sync deletion across devices
+ * Remove an assigned role (downgrade to USER)
  */
 export async function removeWalletRole(address) {
   if (!address) return;
   const normalized = address.toLowerCase().trim();
   const currentRoles = getAllWalletRoles();
-  delete currentRoles[normalized];
+  currentRoles[normalized] = 'USER';
   saveStoredRoles(currentRoles);
 
   try {
-    await fetch(CLOUD_REGISTRY_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'SecureChain_RoleRegistry',
-        data: currentRoles,
-      }),
-    });
+    await assignRoleAPI(normalized, 'USER');
   } catch (e) {
-    console.warn('Cloud role removal skipped/failed:', e);
+    console.warn('Backend role removal sync warning:', e);
   }
 }
 

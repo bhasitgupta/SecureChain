@@ -160,6 +160,65 @@
   padding-left: 14px;
 }
 
+/* ── Left Panel Lower Telemetry Card ── */
+.sidebar-telemetry-card {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: rgba(187, 213, 218, 0.12);
+  border: 1px solid rgba(187, 213, 218, 0.4);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.telemetry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.telemetry-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-tertiary);
+}
+
+.telemetry-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  letter-spacing: 0.05em;
+}
+
+.telemetry-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.telemetry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+}
+
+.telemetry-key {
+  color: var(--text-secondary);
+}
+
+.telemetry-val {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.7rem;
+}
+
 /* ── Footer Status Badge ── */
 .sidebar-footer {
   padding: 14px;

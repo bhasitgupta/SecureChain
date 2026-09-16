@@ -116,7 +116,7 @@ const LineSidebar = ({
     rafRef.current = requestAnimationFrame(runFrame);
   }, [runFrame]);
 
-  // Ultra-fast zero-reflow pointer tracking
+  // Scroll-proof pointer tracking using live bounding rects to prevent misalignments when scrolled
   const handlePointerMove = useCallback(
     e => {
       const list = listRef.current;
@@ -124,21 +124,20 @@ const LineSidebar = ({
       const rect = list.getBoundingClientRect();
       const pointerY = e.clientY - rect.top;
       const ease = FALLOFF_CURVES[falloff] ?? FALLOFF_CURVES.linear;
-      const centers = centersRef.current;
+      const itemsList = itemRefs.current;
       const len = items.length;
 
-      if (centers.length !== len) {
-        measureCenters();
-      }
-
       for (let i = 0; i < len; i++) {
-        const center = centersRef.current[i] || 0;
-        const distance = Math.abs(pointerY - center);
+        const el = itemsList[i];
+        if (!el) continue;
+        const itemRect = el.getBoundingClientRect();
+        const itemCenter = itemRect.top + itemRect.height / 2 - rect.top;
+        const distance = Math.abs(pointerY - itemCenter);
         targetsRef.current[i] = ease(Math.max(0, 1 - distance / proximityRadius));
       }
       startLoop();
     },
-    [falloff, items.length, measureCenters, proximityRadius, startLoop]
+    [falloff, items.length, proximityRadius, startLoop]
   );
 
   const handlePointerLeave = useCallback(() => {

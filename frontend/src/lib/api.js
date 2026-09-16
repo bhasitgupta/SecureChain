@@ -151,8 +151,25 @@ export async function registerIdentity(account, subjectId) {
 }
 
 // ── Roles (RBAC) ──
+export async function fetchAssignedRoles() {
+  try {
+    const data = await apiFetch('/roles');
+    return data.roles || {};
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchRolesForAddress(address) {
   return await apiFetch(`/roles/${address}`);
+}
+
+export async function assignRoleAPI(address, role) {
+  return await apiFetch('/roles/assign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, role }),
+  });
 }
 
 export async function grantRoleOnChain(role, account) {
@@ -194,3 +211,12 @@ export async function fetchRecoveryProviders() {
     return [];
   }
 }
+
+export async function registerRecoveryProviderAPI(providerAddress) {
+  return await apiFetch('/recovery/providers/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ providerAddress }),
+  });
+}
+

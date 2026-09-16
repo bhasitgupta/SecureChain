@@ -54,13 +54,15 @@
   pointer-events: auto;
 }
 
-/* Text label with fixed font weight (zero layout reflow) and bounded translation */
+/* Text label with bounded translation, right padding, and strict containment */
 .line-sidebar__label {
   position: relative;
   display: flex;
   align-items: center;
   width: 100%;
-  max-width: 100%;
+  max-width: calc(100% - 8px);
+  box-sizing: border-box;
+  padding-right: 10px;
   overflow: hidden;
   font-size: var(--font-size);
   line-height: 1.25;
@@ -68,7 +70,7 @@
   color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--text-color));
   transform: translate3d(calc(var(--effect, 0) * var(--max-shift)), 0, 0);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   will-change: transform, color;
 }
 
@@ -79,10 +81,10 @@
 
 .line-sidebar__index {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  margin-right: 0.55rem;
-  font-size: 0.78em;
+  margin-right: 0.65rem;
+  font-size: 0.8em;
   opacity: calc(0.55 + var(--effect, 0) * 0.45);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   flex-shrink: 0;
 }
 
@@ -91,7 +93,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  max-width: calc(100% - 2.5rem);
   display: block;
 }
 

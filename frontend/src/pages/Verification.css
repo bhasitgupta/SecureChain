@@ -75,6 +75,36 @@
   line-height: 1.5;
 }
 
+.verify-result-error {
+  background: #FFFBEB !important;
+  border: 2px solid #D97706 !important;
+  color: #78350F !important;
+  box-shadow: 0 6px 20px rgba(217, 119, 6, 0.2) !important;
+}
+
+.verify-result-error svg {
+  color: #D97706 !important;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.verify-result-error .verify-result-title {
+  color: #92400E !important;
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.verify-result-error .verify-result-desc {
+  color: #78350F !important;
+  font-size: 0.925rem;
+  opacity: 1 !important;
+  font-weight: 600;
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
 .verify-pipeline {
   display: flex;
   flex-direction: column;

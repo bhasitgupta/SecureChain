@@ -66,15 +66,15 @@ export function AuthProvider({ children }) {
 
       // Verify on-chain and authoritative status asynchronously
       resolveAuthoritativeRole(session.wallet).then(resRole => {
-        if (resRole && resRole !== 'USER') {
+        if (resRole) {
           setRole(resRole);
           saveSession({ ...session, role: resRole });
         }
       });
       fetchRolesForAddress(session.wallet)
         .then((data) => {
-          const derived = deriveRoleFromRoleMap(data?.roles);
-          if (derived && derived !== 'USER') {
+          const derived = data?.assignedRole || deriveRoleFromRoleMap(data?.roles);
+          if (derived) {
             setRole(derived);
             saveSession({ ...session, role: derived });
           }

@@ -47,17 +47,12 @@ export default function Verification() {
         setDetails(res.details || res);
       }
     } catch (err) {
-      // Local fallback simulation if offline
-      setTimeout(() => {
-        setCurrentStep(4);
-        setResult('VALID');
-        setDetails({
-          computedSha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-          recordedRoot: '0x7e29b104930bf47120ad4860bcae28329b139281a948201bc8201a0491028301',
-          polygonTx: '0x8f2a4192bca981023746a81b293817492810ab192847291a029381a9182374a8',
-          note: 'Local test mode — connect gateway for live on-chain check',
-        });
-      }, 1200);
+      setCurrentStep(4);
+      setResult('ERROR');
+      setErrorMessage(err.message || 'Verification service unreachable — ensure gateway is running');
+      setDetails({
+        note: 'Gateway connection failed. Start the backend with: npm run dev:backend',
+      });
     } finally {
       setRunning(false);
     }
@@ -96,7 +91,7 @@ export default function Verification() {
 
           {result && (
             <div className={`verify-result verify-result-${result.toLowerCase()}`} style={{ marginTop: 'var(--space-lg)' }}>
-              {result === 'VALID' ? <CheckCircle size={28} /> : <XCircle size={28} />}
+              {result === 'VALID' ? <CheckCircle size={28} /> : result === 'ERROR' ? <AlertCircle size={28} /> : <XCircle size={28} />}
               <div>
                 <div className="verify-result-title">{result}</div>
                 <div className="verify-result-desc">
