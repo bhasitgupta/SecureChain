@@ -40,19 +40,70 @@ exports.putObject = putObject;
 exports.getObject = getObject;
 exports.getPresignedDownloadUrl = getPresignedDownloadUrl;
 const Minio = __importStar(require("minio"));
+const client_s3_1 = require("@aws-sdk/client-s3");
+const s3_request_presigner_1 = require("@aws-sdk/s3-request-presigner");
 const config_js_1 = require("./config.js");
-exports.minioClient = new Minio.Client({
-    endPoint: config_js_1.config.minio.endPoint,
-    port: config_js_1.config.minio.port,
-    useSSL: config_js_1.config.minio.useSSL,
-    accessKey: config_js_1.config.minio.accessKey,
-    secretKey: config_js_1.config.minio.secretKey,
-    region: config_js_1.config.minio.region,
-});
+const isS3Provider = config_js_1.config.minio.endPoint.includes('supabase') ||
+    config_js_1.config.minio.endPoint.includes('amazonaws.com') ||
+    config_js_1.config.minio.endPoint.includes('r2.cloudflarestorage.com') ||
+    config_js_1.config.minio.endPoint.startsWith('http');
+let s3Client = null;
+let minioClientRaw = null;
+if (isS3Provider) {
+    let endpointUrl = config_js_1.config.minio.endPoint;
+    if (!endpointUrl.startsWith('http')) {
+        endpointUrl = `${config_js_1.config.minio.useSSL ? 'https' : 'http'}://${endpointUrl}`;
+    }
+    s3Client = new client_s3_1.S3Client({
+        endpoint: endpointUrl,
+        region: config_js_1.config.minio.region || 'us-east-1',
+        credentials: {
+            accessKeyId: config_js_1.config.minio.accessKey,
+            secretAccessKey: config_js_1.config.minio.secretKey,
+        },
+        forcePathStyle: true,
+    });
+}
+else {
+    try {
+        minioClientRaw = new Minio.Client({
+            endPoint: config_js_1.config.minio.endPoint,
+            port: config_js_1.config.minio.port,
+            useSSL: config_js_1.config.minio.useSSL,
+            accessKey: config_js_1.config.minio.accessKey,
+            secretKey: config_js_1.config.minio.secretKey,
+            region: config_js_1.config.minio.region,
+        });
+    }
+    catch (err) {
+        console.warn('[Storage] Local MinIO client initialization deferred:', err.message);
+    }
+}
+exports.minioClient = {
+    async listBuckets() {
+        if (s3Client) {
+            const res = await s3Client.send(new client_s3_1.ListBucketsCommand({}));
+            return (res.Buckets || []).map((b) => ({ name: b.Name || '' }));
+        }
+        if (minioClientRaw) {
+            const buckets = await minioClientRaw.listBuckets();
+            return buckets.map((b) => ({ name: b.name }));
+        }
+        return [];
+    },
+};
 function getPublicObjectUrl(bucket, objectKey) {
     if (config_js_1.config.minio.publicUrl) {
         const base = config_js_1.config.minio.publicUrl.replace(/\/$/, '');
         return `${base}/${bucket}/${objectKey}`;
+    }
+    if (config_js_1.config.minio.endPoint.includes('supabase')) {
+        // Supabase standard public storage URL format: https://<project-ref>.supabase.co/storage/v1/object/public/<bucket>/<key>
+        const match = config_js_1.config.minio.endPoint.match(/([a-z0-9_-]+)\.supabase\.co/i);
+        if (match) {
+            const projectRef = match[1];
+            return `https://${projectRef}.supabase.co/storage/v1/object/public/${bucket}/${objectKey}`;
+        }
     }
     const protocol = config_js_1.config.minio.useSSL ? 'https' : 'http';
     const port = (config_js_1.config.minio.port === 80 || config_js_1.config.minio.port === 443) ? '' : `:${config_js_1.config.minio.port}`;
@@ -62,43 +113,62 @@ async function ensureBucketsExist() {
     const buckets = Object.values(config_js_1.config.minio.buckets);
     for (const bucket of buckets) {
         try {
-            const exists = await exports.minioClient.bucketExists(bucket);
-            if (!exists) {
-                await exports.minioClient.makeBucket(bucket, config_js_1.config.minio.region);
-                console.log(`[MinIO] Created bucket: ${bucket}`);
-            }
-            // Configure public read policy on asset-thumbnails and doc-thumbnails for external explorer / frontend visibility
-            if (bucket === config_js_1.config.minio.buckets.assetThumbnails || bucket === config_js_1.config.minio.buckets.docThumbnails) {
+            if (s3Client) {
                 try {
-                    const publicPolicy = {
-                        Version: '2012-10-17',
-                        Statement: [
-                            {
-                                Effect: 'Allow',
-                                Principal: { AWS: ['*'] },
-                                Action: ['s3:GetObject'],
-                                Resource: [`arn:aws:s3:::${bucket}/*`],
-                            },
-                        ],
-                    };
-                    await exports.minioClient.setBucketPolicy(bucket, JSON.stringify(publicPolicy));
+                    await s3Client.send(new client_s3_1.HeadBucketCommand({ Bucket: bucket }));
                 }
                 catch {
-                    // Ignore policy set errors on providers that don't support custom bucket policies via API
+                    await s3Client.send(new client_s3_1.CreateBucketCommand({ Bucket: bucket }));
+                    console.log(`[Storage] Created bucket: ${bucket}`);
+                }
+            }
+            else if (minioClientRaw) {
+                const exists = await minioClientRaw.bucketExists(bucket);
+                if (!exists) {
+                    await minioClientRaw.makeBucket(bucket, config_js_1.config.minio.region);
+                    console.log(`[Storage] Created bucket: ${bucket}`);
                 }
             }
         }
         catch (err) {
-            console.warn(`[MinIO] Bucket check warning for ${bucket}:`, err.message);
+            console.warn(`[Storage] Bucket ensure warning for ${bucket}:`, err.message);
         }
     }
 }
 async function putObject(bucket, objectKey, streamOrBuffer, size, metaData) {
-    return exports.minioClient.putObject(bucket, objectKey, streamOrBuffer, size, metaData);
+    if (s3Client) {
+        const contentType = metaData?.['Content-Type'] || metaData?.contentType || 'application/octet-stream';
+        const cmd = new client_s3_1.PutObjectCommand({
+            Bucket: bucket,
+            Key: objectKey,
+            Body: streamOrBuffer,
+            ContentType: contentType,
+        });
+        return s3Client.send(cmd);
+    }
+    if (minioClientRaw) {
+        return minioClientRaw.putObject(bucket, objectKey, streamOrBuffer, size, metaData);
+    }
+    throw new Error('Storage client not initialized');
 }
 async function getObject(bucket, objectKey) {
-    return exports.minioClient.getObject(bucket, objectKey);
+    if (s3Client) {
+        const cmd = new client_s3_1.GetObjectCommand({ Bucket: bucket, Key: objectKey });
+        const res = await s3Client.send(cmd);
+        return res.Body;
+    }
+    if (minioClientRaw) {
+        return minioClientRaw.getObject(bucket, objectKey);
+    }
+    throw new Error('Storage client not initialized');
 }
 async function getPresignedDownloadUrl(bucket, objectKey, expirySeconds = 3600) {
-    return exports.minioClient.presignedGetObject(bucket, objectKey, expirySeconds);
+    if (s3Client) {
+        const cmd = new client_s3_1.GetObjectCommand({ Bucket: bucket, Key: objectKey });
+        return (0, s3_request_presigner_1.getSignedUrl)(s3Client, cmd, { expiresIn: expirySeconds });
+    }
+    if (minioClientRaw) {
+        return minioClientRaw.presignedGetObject(bucket, objectKey, expirySeconds);
+    }
+    throw new Error('Storage client not initialized');
 }
