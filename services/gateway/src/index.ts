@@ -16,6 +16,8 @@ import { ethers } from 'ethers';
 import { Roles } from '@sih26125/common';
 import { adminSigner, provider, getIamContract } from './chain.js';
 
+import { ensureBucketsExist, minioClient } from './minio.js';
+
 const fastify = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
@@ -33,6 +35,7 @@ async function main() {
     new Set([
       config.frontendUrl,
       ...envOrigins,
+      'https://securechain1.vercel.app',
       'http://localhost:3000',
       'http://127.0.0.1:3000',
       'http://localhost:5173',
@@ -78,6 +81,27 @@ async function main() {
       }
     }
 
+    let minioStatus: any = null;
+    try {
+      const buckets = await minioClient.listBuckets();
+      minioStatus = {
+        connected: true,
+        endPoint: config.minio.endPoint,
+        port: config.minio.port,
+        ssl: config.minio.useSSL,
+        buckets: buckets.map((b) => b.name),
+        publicUrl: config.minio.publicUrl || 'Direct S3 / Gateway streaming',
+      };
+    } catch (err: any) {
+      minioStatus = {
+        connected: false,
+        endPoint: config.minio.endPoint,
+        port: config.minio.port,
+        ssl: config.minio.useSSL,
+        error: err.code || err.message,
+      };
+    }
+
     return {
       status: 'ok',
       service: 'sih26125-gateway',
@@ -88,6 +112,7 @@ async function main() {
         anchor: config.anchorAddress,
         recovery: config.recoveryAddress,
       },
+      minio: minioStatus,
       relayer: relayerData,
       timestamp: new Date().toISOString(),
     };
@@ -102,6 +127,11 @@ async function main() {
   await fastify.register(verifyRoutes, { prefix: '/api/verify' });
   await fastify.register(recoveryRoutes, { prefix: '/api/recovery' });
   await fastify.register(auditRoutes, { prefix: '/api/audit' });
+
+  // Initialize MinIO storage buckets safely in background
+  ensureBucketsExist().catch((err) => {
+    fastify.log.warn(`[MinIO] Bucket initialization skipped (storage offline/unreachable): ${err.message}`);
+  });
 
   // Start listening
   try {

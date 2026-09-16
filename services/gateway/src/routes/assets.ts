@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { formatDidPkh, hashDid } from '@sih26125/common';
 import { config } from '../config.js';
 import { query } from '../db.js';
-import { putObject, getObject } from '../minio.js';
+import { putObject, getObject, getPublicObjectUrl } from '../minio.js';
 import { getNftContract, adminSigner, provider } from '../chain.js';
 import { requireOnChainRole } from '../auth.js';
 
@@ -37,12 +37,15 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
         }
       }
 
+      const publicMinioUrl = getPublicObjectUrl(config.minio.buckets.assetThumbnails, row.minio_key);
+
       assets.push({
         tokenId: row.token_id,
         minioKey: row.minio_key,
         mimeType: row.mime_type,
         createdAt: row.created_at,
-        thumbnailUrl: `/api/assets/${row.token_id}/thumbnail`,
+        thumbnailUrl: config.minio.publicUrl ? publicMinioUrl : `/api/assets/${row.token_id}/thumbnail`,
+        publicMinioUrl,
         chain: chainData,
       });
     }
@@ -163,9 +166,48 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
         return reply.status(503).send({ error: 'Chain or Admin wallet not configured' });
       }
 
+      let finalMetadataURI = metadataURI;
+      let minioImageUrl = '';
+      let minioKey = '';
+
+      // Upload thumbnail to MinIO before minting so public MinIO image URL is stamped in on-chain tokenURI
+      if (thumbnailBuffer) {
+        minioKey = `asset_${Date.now()}_thumb`;
+        try {
+          await putObject(
+            config.minio.buckets.assetThumbnails,
+            minioKey,
+            thumbnailBuffer,
+            thumbnailBuffer.length,
+            { 'Content-Type': thumbnailMime }
+          );
+          minioImageUrl = getPublicObjectUrl(config.minio.buckets.assetThumbnails, minioKey);
+        } catch (minioErr: any) {
+          req.log.warn(`[MinIO] Asset thumbnail upload warning: ${minioErr.message}`);
+        }
+      }
+
+      // If metadataURI is raw text without an image, build valid ERC-721 metadata JSON for Polygonscan
+      if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
+        const metadataJson = {
+          name: finalMetadataURI || 'Enterprise Asset',
+          description: `${assetClass} enterprise asset secured on Polygon Amoy`,
+          image: minioImageUrl || '',
+          external_url: 'https://securechain1.vercel.app/assets',
+          attributes: [
+            { trait_type: 'Asset Class', value: assetClass },
+            { trait_type: 'Network', value: 'Polygon Amoy (80002)' },
+            { trait_type: 'Storage', value: minioImageUrl ? 'MinIO / S3' : 'On-Chain' },
+            { trait_type: 'Standard', value: 'ERC-721' },
+          ],
+        };
+        const jsonStr = JSON.stringify(metadataJson);
+        finalMetadataURI = `data:application/json;base64,${Buffer.from(jsonStr).toString('base64')}`;
+      }
+
       try {
-        await nft.mint.staticCall(toAddress, didHash, assetClass, metadataURI);
-        const tx = await nft.mint(toAddress, didHash, assetClass, metadataURI);
+        await nft.mint.staticCall(toAddress, didHash, assetClass, finalMetadataURI);
+        const tx = await nft.mint(toAddress, didHash, assetClass, finalMetadataURI);
         txHash = tx.hash;
         const receipt = await tx.wait();
 
@@ -187,36 +229,82 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
         return reply.status(500).send({ error: 'Mint succeeded on-chain but failed to parse tokenId from receipt' });
       }
 
-      // Save thumbnail in MinIO if provided
-      if (thumbnailBuffer) {
-        const minioKey = `${tokenId}_thumbnail`;
-        await putObject(
-          config.minio.buckets.assetThumbnails,
-          minioKey,
-          thumbnailBuffer,
-          thumbnailBuffer.length,
-          { 'Content-Type': thumbnailMime }
-        );
-
-        await query(
-          `INSERT INTO asset_thumbnails (token_id, minio_key, mime_type, created_at)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (token_id) DO UPDATE SET minio_key = $2, mime_type = $3`,
-          [tokenId, minioKey, thumbnailMime]
-        );
+      // Associate MinIO thumbnail with confirmed tokenId in DB
+      if (thumbnailBuffer && minioKey) {
+        try {
+          await query(
+            `INSERT INTO asset_thumbnails (token_id, minio_key, mime_type, created_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (token_id) DO UPDATE SET minio_key = $2, mime_type = $3`,
+            [tokenId, minioKey, thumbnailMime]
+          );
+        } catch (dbErr: any) {
+          req.log.warn(`DB thumbnail record cache skipped: ${dbErr.message}`);
+        }
       }
+
+      const publicUrl = minioImageUrl || (minioKey ? getPublicObjectUrl(config.minio.buckets.assetThumbnails, minioKey) : null);
 
       return {
         success: true,
         tokenId,
         txHash,
-        thumbnailUrl: thumbnailBuffer ? `/api/assets/${tokenId}/thumbnail` : null,
+        thumbnailUrl: publicUrl || `/api/assets/${tokenId}/thumbnail`,
+        publicMinioUrl: publicUrl,
         assetClass,
         owner: toAddress.toLowerCase(),
         did,
       };
     }
   );
+
+  // POST /api/assets/upload-thumbnail - Pre-upload asset image to MinIO so caller gets public URL for direct MetaMask minting
+  fastify.post('/upload-thumbnail', async (req, reply) => {
+    if (!req.isMultipart()) {
+      return reply.status(400).send({ error: 'Request must be multipart/form-data' });
+    }
+
+    let fileBuffer: Buffer | null = null;
+    let mimeType = 'image/png';
+    let fileName = 'thumbnail.png';
+
+    const parts = req.parts();
+    for await (const part of parts) {
+      if (part.type === 'file' && part.fieldname === 'thumbnail') {
+        fileBuffer = await part.toBuffer();
+        mimeType = part.mimetype;
+        fileName = part.filename;
+      }
+    }
+
+    if (!fileBuffer || fileBuffer.length === 0) {
+      return reply.status(400).send({ error: 'No thumbnail file uploaded' });
+    }
+
+    const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const objectKey = `thumb_${Date.now()}_${cleanName}`;
+
+    try {
+      await putObject(
+        config.minio.buckets.assetThumbnails,
+        objectKey,
+        fileBuffer,
+        fileBuffer.length,
+        { 'Content-Type': mimeType }
+      );
+
+      const publicUrl = getPublicObjectUrl(config.minio.buckets.assetThumbnails, objectKey);
+      return {
+        success: true,
+        minioKey: objectKey,
+        publicUrl,
+        mimeType,
+      };
+    } catch (err: any) {
+      req.log.error(err);
+      return reply.status(500).send({ error: `MinIO upload failed: ${err.message}` });
+    }
+  });
 
   // POST /api/assets/allocate - Admin initial allocation
   fastify.post<{ Body: { tokenId: string; to: string } }>(

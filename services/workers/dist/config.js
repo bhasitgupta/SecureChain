@@ -9,7 +9,7 @@ const path_1 = __importDefault(require("path"));
 dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), '../../.env') });
 dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), '.env') });
 exports.config = {
-    polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology',
+    polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-amoy.drpc.org',
     chainId: parseInt(process.env.CHAIN_ID || '80002', 10),
     anchorAddress: (process.env.ANCHOR_ADDRESS || ''),
     adminPrivateKey: (process.env.ADMIN_PRIVATE_KEY || ''),
@@ -17,15 +17,19 @@ exports.config = {
     redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
     minio: {
         endPoint: process.env.MINIO_ENDPOINT || 'localhost',
-        port: parseInt(process.env.MINIO_PORT || '9000', 10),
+        port: process.env.MINIO_PORT
+            ? parseInt(process.env.MINIO_PORT, 10)
+            : (process.env.MINIO_USE_SSL === 'true' ? 443 : 9000),
         useSSL: process.env.MINIO_USE_SSL === 'true',
         accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
         secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+        region: process.env.MINIO_REGION || 'us-east-1',
+        publicUrl: process.env.MINIO_PUBLIC_URL || '',
         buckets: {
-            documents: 'documents',
-            ocrOutput: 'ocr-output',
-            assetThumbnails: 'asset-thumbnails',
-            docThumbnails: 'doc-thumbnails',
+            documents: process.env.MINIO_BUCKET_DOCS || 'documents',
+            ocrOutput: process.env.MINIO_BUCKET_OCR || 'ocr-output',
+            assetThumbnails: process.env.MINIO_BUCKET_THUMBNAILS || 'asset-thumbnails',
+            docThumbnails: process.env.MINIO_BUCKET_DOC_THUMBNAILS || 'doc-thumbnails',
         },
     },
     batchMaxLeaves: parseInt(process.env.BATCH_MAX_LEAVES || '10', 10), // Flush small batches quickly for demo

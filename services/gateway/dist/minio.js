@@ -34,6 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.minioClient = void 0;
+exports.getPublicObjectUrl = getPublicObjectUrl;
+exports.ensureBucketsExist = ensureBucketsExist;
 exports.putObject = putObject;
 exports.getObject = getObject;
 exports.getPresignedDownloadUrl = getPresignedDownloadUrl;
@@ -45,7 +47,52 @@ exports.minioClient = new Minio.Client({
     useSSL: config_js_1.config.minio.useSSL,
     accessKey: config_js_1.config.minio.accessKey,
     secretKey: config_js_1.config.minio.secretKey,
+    region: config_js_1.config.minio.region,
 });
+function getPublicObjectUrl(bucket, objectKey) {
+    if (config_js_1.config.minio.publicUrl) {
+        const base = config_js_1.config.minio.publicUrl.replace(/\/$/, '');
+        return `${base}/${bucket}/${objectKey}`;
+    }
+    const protocol = config_js_1.config.minio.useSSL ? 'https' : 'http';
+    const port = (config_js_1.config.minio.port === 80 || config_js_1.config.minio.port === 443) ? '' : `:${config_js_1.config.minio.port}`;
+    return `${protocol}://${config_js_1.config.minio.endPoint}${port}/${bucket}/${objectKey}`;
+}
+async function ensureBucketsExist() {
+    const buckets = Object.values(config_js_1.config.minio.buckets);
+    for (const bucket of buckets) {
+        try {
+            const exists = await exports.minioClient.bucketExists(bucket);
+            if (!exists) {
+                await exports.minioClient.makeBucket(bucket, config_js_1.config.minio.region);
+                console.log(`[MinIO] Created bucket: ${bucket}`);
+            }
+            // Configure public read policy on asset-thumbnails and doc-thumbnails for external explorer / frontend visibility
+            if (bucket === config_js_1.config.minio.buckets.assetThumbnails || bucket === config_js_1.config.minio.buckets.docThumbnails) {
+                try {
+                    const publicPolicy = {
+                        Version: '2012-10-17',
+                        Statement: [
+                            {
+                                Effect: 'Allow',
+                                Principal: { AWS: ['*'] },
+                                Action: ['s3:GetObject'],
+                                Resource: [`arn:aws:s3:::${bucket}/*`],
+                            },
+                        ],
+                    };
+                    await exports.minioClient.setBucketPolicy(bucket, JSON.stringify(publicPolicy));
+                }
+                catch {
+                    // Ignore policy set errors on providers that don't support custom bucket policies via API
+                }
+            }
+        }
+        catch (err) {
+            console.warn(`[MinIO] Bucket check warning for ${bucket}:`, err.message);
+        }
+    }
+}
 async function putObject(bucket, objectKey, streamOrBuffer, size, metaData) {
     return exports.minioClient.putObject(bucket, objectKey, streamOrBuffer, size, metaData);
 }

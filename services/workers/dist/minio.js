@@ -44,6 +44,7 @@ exports.minioClient = new Minio.Client({
     useSSL: config_js_1.config.minio.useSSL,
     accessKey: config_js_1.config.minio.accessKey,
     secretKey: config_js_1.config.minio.secretKey,
+    region: config_js_1.config.minio.region,
 });
 async function putObject(bucket, objectKey, streamOrBuffer, size, metaData) {
     return exports.minioClient.putObject(bucket, objectKey, streamOrBuffer, size, metaData);

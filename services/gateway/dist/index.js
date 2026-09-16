@@ -19,6 +19,7 @@ const audit_js_1 = require("./routes/audit.js");
 const ethers_1 = require("ethers");
 const common_1 = require("@sih26125/common");
 const chain_js_1 = require("./chain.js");
+const minio_js_1 = require("./minio.js");
 const fastify = (0, fastify_1.default)({
     logger: {
         level: process.env.LOG_LEVEL || 'info',
@@ -33,6 +34,7 @@ async function main() {
     const origins = Array.from(new Set([
         config_js_1.config.frontendUrl,
         ...envOrigins,
+        'https://securechain1.vercel.app',
         'http://localhost:3000',
         'http://127.0.0.1:3000',
         'http://localhost:5173',
@@ -73,6 +75,27 @@ async function main() {
                 };
             }
         }
+        let minioStatus = null;
+        try {
+            const buckets = await minio_js_1.minioClient.listBuckets();
+            minioStatus = {
+                connected: true,
+                endPoint: config_js_1.config.minio.endPoint,
+                port: config_js_1.config.minio.port,
+                ssl: config_js_1.config.minio.useSSL,
+                buckets: buckets.map((b) => b.name),
+                publicUrl: config_js_1.config.minio.publicUrl || 'Direct S3 / Gateway streaming',
+            };
+        }
+        catch (err) {
+            minioStatus = {
+                connected: false,
+                endPoint: config_js_1.config.minio.endPoint,
+                port: config_js_1.config.minio.port,
+                ssl: config_js_1.config.minio.useSSL,
+                error: err.code || err.message,
+            };
+        }
         return {
             status: 'ok',
             service: 'sih26125-gateway',
@@ -83,6 +106,7 @@ async function main() {
                 anchor: config_js_1.config.anchorAddress,
                 recovery: config_js_1.config.recoveryAddress,
             },
+            minio: minioStatus,
             relayer: relayerData,
             timestamp: new Date().toISOString(),
         };
@@ -96,6 +120,10 @@ async function main() {
     await fastify.register(verify_js_1.verifyRoutes, { prefix: '/api/verify' });
     await fastify.register(recovery_js_1.recoveryRoutes, { prefix: '/api/recovery' });
     await fastify.register(audit_js_1.auditRoutes, { prefix: '/api/audit' });
+    // Initialize MinIO storage buckets safely in background
+    (0, minio_js_1.ensureBucketsExist)().catch((err) => {
+        fastify.log.warn(`[MinIO] Bucket initialization skipped (storage offline/unreachable): ${err.message}`);
+    });
     // Start listening
     try {
         const address = await fastify.listen({ port: config_js_1.config.port, host: config_js_1.config.host });

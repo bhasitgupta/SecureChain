@@ -566,12 +566,35 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl })
 
       // Construct official ERC-721 metadata URI with real image for Polygonscan compatibility
       let finalMetadataURI = metadataURI;
+      let minioImageUrl = imageUrl || '';
+
+      if (file && isBackendConfigured()) {
+        try {
+          const thumbForm = new FormData();
+          thumbForm.append('thumbnail', file);
+          const thumbRes = await fetch(`${API_BASE}/assets/upload-thumbnail`, {
+            method: 'POST',
+            body: thumbForm,
+            headers: { ...getAuthHeaders() },
+            credentials: 'include',
+          });
+          if (thumbRes.ok) {
+            const thumbData = await thumbRes.json();
+            if (thumbData.publicUrl) {
+              minioImageUrl = thumbData.publicUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('[MinIO] Pre-mint thumbnail upload skipped, using provided asset image');
+        }
+      }
+
       if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
         finalMetadataURI = buildErc721MetadataURI({
           name: metadataURI || 'Enterprise Digital Asset',
           description: `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy by SecureChain`,
           assetClass: assetClass || 'Defence Equipment',
-          imageUrl: imageUrl || '',
+          imageUrl: minioImageUrl,
         });
       }
 
