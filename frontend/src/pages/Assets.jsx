@@ -24,7 +24,6 @@ export default function Assets() {
   const [description, setDescription] = useState('');
   const [assetClass, setAssetClass] = useState('Defence Equipment');
   const [toAddress, setToAddress] = useState('');
-  const [imageUrlInput, setImageUrlInput] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileBase64, setFileBase64] = useState(null);
   const [mintLoading, setMintLoading] = useState(false);
@@ -111,7 +110,7 @@ export default function Assets() {
     setMintError('');
     setMintSuccess(null);
 
-    const finalImage = fileBase64 || imageUrlInput?.trim() || '';
+    const finalImage = fileBase64 || '';
 
     try {
       const res = await mintAsset({
@@ -135,7 +134,6 @@ export default function Assets() {
           setDescription('');
           setSelectedFile(null);
           setFileBase64(null);
-          setImageUrlInput('');
           setMintStep('');
         }, 3200);
       } else {
@@ -502,22 +500,11 @@ export default function Assets() {
                 />
               </div>
 
-              <div className="input-group">
-                <label>Or Public Image URL / IPFS Hash</label>
-                <input 
-                  className="input" 
-                  placeholder="https://... or ipfs://..."
-                  value={imageUrlInput}
-                  onChange={e => setImageUrlInput(e.target.value)}
-                  disabled={!!selectedFile}
-                />
-              </div>
-
               {/* Real Image Preview */}
-              {(fileBase64 || imageUrlInput) && (
+              {fileBase64 && (
                 <div style={{ height: 120, borderRadius: 6, overflow: 'hidden', background: '#0F172A', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <img 
-                    src={fileBase64 || imageUrlInput} 
+                    src={fileBase64} 
                     alt="Preview" 
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                   />
