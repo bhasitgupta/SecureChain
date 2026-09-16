@@ -4,6 +4,15 @@ import { AMOY_RPCS } from '../utils/roleRegistry.js';
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
+export function isBackendConfigured() {
+  if (typeof window === 'undefined') return true;
+  // If app is served over HTTPS (e.g. Vercel) and API_BASE is localhost, Private Network Access blocks it.
+  if (window.location.protocol === 'https:' && (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1'))) {
+    return false;
+  }
+  return true;
+}
+
 export function getAuthHeaders() {
   try {
     const token = localStorage.getItem('sc_auth_token');
@@ -14,6 +23,10 @@ export function getAuthHeaders() {
 }
 
 export async function apiFetch(endpoint, options = {}) {
+  if (!isBackendConfigured()) {
+    throw new Error('Localhost backend not reachable from HTTPS production domain');
+  }
+
   const url = `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
   const headers = {
     ...getAuthHeaders(),
@@ -281,7 +294,95 @@ export const NFT_ABI = [
   'event AssetTransferAuthorized(uint256 indexed tokenId, address indexed from, address indexed to, address actor)'
 ];
 
+const CONFIRMED_ASSETS_KEY = 'sc_confirmed_assets';
+const ASSET_THUMBNAILS_KEY = 'sc_asset_thumbnails';
+
+export function getCachedAssets() {
+  try {
+    const raw = localStorage.getItem(CONFIRMED_ASSETS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure thumbnails are fresh
+        return parsed.map(a => ({
+          ...a,
+          thumbnailUrl: resolveThumbnail(a.tokenId, a.description, a.assetClass),
+        }));
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function saveCachedAssets(assets) {
+  if (!Array.isArray(assets) || assets.length === 0) return;
+  try {
+    localStorage.setItem(CONFIRMED_ASSETS_KEY, JSON.stringify(assets));
+  } catch {}
+}
+
+export function resolveThumbnail(tokenId, metadataURI, assetClass) {
+  // 1. User/browser uploaded thumbnail from storage
+  try {
+    const thumbs = JSON.parse(localStorage.getItem(ASSET_THUMBNAILS_KEY) || '{}');
+    if (thumbs[String(tokenId)]) return thumbs[String(tokenId)];
+  } catch {}
+
+  // 2. Direct image URL embedded in metadataURI
+  if (typeof metadataURI === 'string') {
+    const clean = metadataURI.trim();
+    if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('data:image/')) {
+      return clean;
+    }
+    if (clean.startsWith('ipfs://')) {
+      return `https://ipfs.io/ipfs/${clean.replace('ipfs://', '')}`;
+    }
+  }
+
+  // 3. High-res visual fallbacks for recognized on-chain tokens
+  const desc = (metadataURI || '').toLowerCase();
+  if (String(tokenId) === '2' || desc.includes('cat')) {
+    return '/assets/nfts/neon_cat.jpg';
+  }
+  if (String(tokenId) === '1' || desc.includes('matix') || desc.includes('matrix')) {
+    return '/assets/nfts/matrix.jpg';
+  }
+
+  // 4. Default high-tech defence shield asset
+  return '/assets/nfts/shield.jpg';
+}
+
+export function saveAssetThumbnail(tokenId, dataUrlOrBlob) {
+  try {
+    const thumbs = JSON.parse(localStorage.getItem(ASSET_THUMBNAILS_KEY) || '{}');
+    thumbs[String(tokenId)] = dataUrlOrBlob;
+    localStorage.setItem(ASSET_THUMBNAILS_KEY, JSON.stringify(thumbs));
+
+    // Update in confirmed cache
+    const cached = getCachedAssets();
+    const updated = cached.map(a => String(a.tokenId) === String(tokenId) ? { ...a, thumbnailUrl: dataUrlOrBlob } : a);
+    saveCachedAssets(updated);
+
+    window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { tokenId, thumbnailUrl: dataUrlOrBlob } }));
+    return true;
+  } catch (e) {
+    console.warn('Failed to save thumbnail:', e);
+    return false;
+  }
+}
+
 export async function getAmoyProvider() {
+  // Try browser MetaMask provider first if available
+  if (typeof window !== 'undefined' && window.ethereum) {
+    try {
+      const bp = new ethers.BrowserProvider(window.ethereum);
+      const net = await bp.getNetwork();
+      if (Number(net.chainId) === 80002) {
+        return bp;
+      }
+    } catch {}
+  }
+
   for (const rpc of AMOY_RPCS) {
     try {
       const p = new ethers.JsonRpcProvider(rpc);
@@ -294,78 +395,91 @@ export async function getAmoyProvider() {
 
 // ── Assets ──
 export async function fetchAssets() {
+  const cached = getCachedAssets();
   const onChainAssets = [];
   const seenIds = new Set();
 
-  // 1. Direct Polygon Amoy on-chain query
-  try {
-    const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
-    const provider = await getAmoyProvider();
-    const nft = new ethers.Contract(nftAddr, NFT_ABI, provider);
+  // Try multiple providers in sequence until one succeeds
+  const providersToTry = [];
+  if (typeof window !== 'undefined' && window.ethereum) {
+    try {
+      providersToTry.push(new ethers.BrowserProvider(window.ethereum));
+    } catch {}
+  }
+  for (const rpc of AMOY_RPCS) {
+    try {
+      providersToTry.push(new ethers.JsonRpcProvider(rpc));
+    } catch {}
+  }
 
-    for (let id = 1; id <= 50; id++) {
-      try {
-        const ok = await nft.exists(id);
-        if (!ok) break;
-        const owner = await nft.ownerOf(id);
-        const rec = await nft.getAsset(id);
-        const tokenId = String(id);
-        seenIds.add(tokenId);
+  const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
+  let querySuccess = false;
 
-        let localThumb = null;
+  for (const p of providersToTry) {
+    try {
+      const nft = new ethers.Contract(nftAddr, NFT_ABI, p);
+      for (let id = 1; id <= 50; id++) {
         try {
-          const thumbs = JSON.parse(localStorage.getItem('sc_asset_thumbnails') || '{}');
-          localThumb = thumbs[tokenId] || null;
-        } catch {}
+          const ok = await nft.exists(id);
+          if (!ok) break;
+          const owner = await nft.ownerOf(id);
+          const rec = await nft.getAsset(id);
+          const tokenId = String(id);
+          seenIds.add(tokenId);
 
-        onChainAssets.push({
-          tokenId,
-          description: rec.metadataURI || `Asset #${tokenId}`,
-          assetClass: rec.assetClass || 'Enterprise Asset',
-          assetStatus: Number(rec.status) === 1 ? 'Active' : Number(rec.status) === 2 ? 'Transferred' : 'Retired',
-          ownerName: owner.toLowerCase(),
-          createdAt: Number(rec.mintedAt) ? Number(rec.mintedAt) * 1000 : Date.now(),
-          thumbnailUrl: localThumb || null,
-          onChain: true,
-        });
-      } catch (err) {
+          const thumb = resolveThumbnail(tokenId, rec.metadataURI, rec.assetClass);
+
+          onChainAssets.push({
+            tokenId,
+            description: rec.metadataURI || `Asset #${tokenId}`,
+            assetClass: rec.assetClass || 'Enterprise Asset',
+            assetStatus: Number(rec.status) === 1 ? 'Active' : Number(rec.status) === 2 ? 'Transferred' : 'Retired',
+            ownerName: owner.toLowerCase(),
+            createdAt: Number(rec.mintedAt) ? Number(rec.mintedAt) * 1000 : Date.now(),
+            thumbnailUrl: thumb,
+            onChain: true,
+          });
+        } catch (tokenErr) {
+          // Break inner loop on first nonexistent token
+          break;
+        }
+      }
+
+      if (onChainAssets.length > 0) {
+        querySuccess = true;
         break;
       }
+    } catch (providerErr) {
+      continue;
     }
-  } catch (err) {
-    console.warn('Failed to query on-chain assets from Polygon Amoy:', err);
   }
 
   // 2. Fetch backend thumbnails/metadata if gateway is available
-  try {
-    const data = await apiFetch('/assets');
-    if (data && Array.isArray(data.assets)) {
-      for (const ba of data.assets) {
-        const tid = String(ba.tokenId);
-        const existing = onChainAssets.find(a => a.tokenId === tid);
-        if (existing) {
-          if (ba.thumbnailUrl) existing.thumbnailUrl = ba.thumbnailUrl;
-        } else if (ba.chain && ba.chain.owner) {
-          onChainAssets.push({
-            tokenId: tid,
-            description: ba.chain.metadataURI || ba.description || `Asset #${tid}`,
-            assetClass: ba.chain.assetClass || ba.assetClass || 'Enterprise Asset',
-            assetStatus: ba.chain.status || 'Active',
-            ownerName: ba.chain.owner.toLowerCase(),
-            createdAt: ba.createdAt || Date.now(),
-            thumbnailUrl: ba.thumbnailUrl,
-            onChain: true,
-          });
-          seenIds.add(tid);
+  if (isBackendConfigured()) {
+    try {
+      const data = await apiFetch('/assets');
+      if (data && Array.isArray(data.assets)) {
+        for (const ba of data.assets) {
+          const tid = String(ba.tokenId);
+          const existing = onChainAssets.find(a => a.tokenId === tid);
+          if (existing && ba.thumbnailUrl) {
+            existing.thumbnailUrl = ba.thumbnailUrl;
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  // Clean out legacy mock/fake local assets from localStorage so user is not deceived
-  try {
-    localStorage.removeItem('sc_digital_assets');
-  } catch {}
+  // If live query succeeded, update cache
+  if (querySuccess && onChainAssets.length > 0) {
+    saveCachedAssets(onChainAssets);
+    return onChainAssets;
+  }
+
+  // If live query was rate-limited by public RPC, NEVER wipe out valid tokens! Return cached tokens!
+  if (cached.length > 0) {
+    return cached;
+  }
 
   return onChainAssets;
 }
