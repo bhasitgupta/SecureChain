@@ -23,7 +23,10 @@ export const AMOY_RPCS = [
   'https://amoy.drpc.org',
 ].filter((url, idx, arr) => url && arr.indexOf(url) === idx);
 
-// Initial Authoritative Admin & Privileged Role Addresses (Specified by Governance & On-Chain Deployments)
+// Primary Governance Admin Address (Main user wallet - permanently authoritative ADMIN)
+export const PRIMARY_ADMIN_ADDRESS = '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c';
+
+// Initial Authoritative Admin & Privileged Role Addresses
 export const DEFAULT_ROLES = {
   '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
   '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
@@ -95,6 +98,10 @@ export function getRoleForWallet(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase().trim();
 
+  if (normalized === PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+    return 'ADMIN';
+  }
+
   try {
     const roles = getAllWalletRoles();
     if (roles[normalized]) {
@@ -115,6 +122,11 @@ export function getRoleForWallet(address) {
 export async function checkOnChainRole(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase().trim();
+
+  if (normalized === PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+    return 'ADMIN';
+  }
+
   const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
 
   // 1. Try gateway backend role endpoint first (has direct node connection + DB cache, sub-100ms)
@@ -180,6 +192,10 @@ export async function resolveAuthoritativeRole(address) {
   if (!address) return 'USER';
   const normalized = address.toLowerCase().trim();
 
+  if (normalized === PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+    return 'ADMIN';
+  }
+
   try {
     const onChainRole = await checkOnChainRole(normalized);
     if (onChainRole) {
@@ -213,9 +229,12 @@ export function getAllWalletRoles() {
       }
     });
 
+    // Primary admin address is permanently guaranteed ADMIN
+    normalizedRegistry[PRIMARY_ADMIN_ADDRESS.toLowerCase()] = 'ADMIN';
+
     return normalizedRegistry;
   } catch (e) {
-    return { ...DEFAULT_ROLES };
+    return { ...DEFAULT_ROLES, [PRIMARY_ADMIN_ADDRESS.toLowerCase()]: 'ADMIN' };
   }
 }
 

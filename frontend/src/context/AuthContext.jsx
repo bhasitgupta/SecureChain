@@ -238,18 +238,6 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const connectDemoAccount = useCallback((targetRole = 'ADMIN') => {
-    const demoWallet = '0x0Ca09ba889727bE9FbBAA53d2fE1541bF2f8cee6';
-    try { sessionStorage.removeItem('sc_manual_disconnect'); } catch (e) {}
-    setWallet(demoWallet);
-    setRole(targetRole);
-    setWalletRole(demoWallet, targetRole);
-    setAuthMethod('demo');
-    setIsConnected(true);
-    saveSession({ wallet: demoWallet, role: targetRole, authMethod: 'demo', uid: null, isConnected: true });
-    return { address: demoWallet, role: targetRole };
-  }, []);
-
   const switchRole = (newRole) => {
     setRole(newRole);
     const session = loadSession();
@@ -261,7 +249,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       wallet, role, isConnected, authMethod, uid, loading, provider,
-      connectWithWallet, connectDemoAccount, loginWithUID, disconnect, switchRole, authenticateSession,
+      connectWithWallet, loginWithUID, disconnect, switchRole, authenticateSession,
       // Legacy alias for backward compat
       connect: () => connectWithWallet('metamask'),
     }}>
