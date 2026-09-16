@@ -92,7 +92,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
           className="securechain-linesidebar"
         />
 
-        {(!collapsed || mobileOpen) && (
+        {(!collapsed || mobileOpen) && currentRole === 'ADMIN' && (
           <div className="sidebar-telemetry-card">
             <div className="telemetry-header">
               <span className="telemetry-title">NETWORK TELEMETRY</span>

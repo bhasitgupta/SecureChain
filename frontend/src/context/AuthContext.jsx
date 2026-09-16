@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { connectWallet, switchNetwork, signAuthMessage, onAccountsChanged, onChainChanged } from '../utils/walletUtils';
-import { getRoleForWallet, checkOnChainRole, setWalletRole, resolveAuthoritativeRole } from '../utils/roleRegistry';
+import { getRoleForWallet, checkOnChainRole, setWalletRole, resolveAuthoritativeRole, PRIMARY_ADMIN_ADDRESS } from '../utils/roleRegistry';
 import { walletLogin, fetchRolesForAddress } from '../lib/api';
 
 const AuthContext = createContext(null);
@@ -41,7 +41,8 @@ function deriveRoleFromRoleMap(roleMap) {
 
 export function AuthProvider({ children }) {
   const initialSession = loadSession();
-  const initialRole = initialSession?.wallet ? getRoleForWallet(initialSession.wallet) : (initialSession?.role || 'USER');
+  const isPrimary = initialSession?.wallet && initialSession.wallet.toLowerCase() === PRIMARY_ADMIN_ADDRESS.toLowerCase();
+  const initialRole = isPrimary ? 'ADMIN' : (initialSession?.wallet ? getRoleForWallet(initialSession.wallet) : (initialSession?.role || 'USER'));
   const [wallet, setWallet] = useState(initialSession?.wallet || null);
   const [role, setRole] = useState(initialRole);
   const [isConnected, setIsConnected] = useState(!!initialSession?.isConnected);
@@ -54,7 +55,8 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const session = loadSession();
     if (session && session.wallet) {
-      const resolvedRole = getRoleForWallet(session.wallet);
+      const isPrimaryAdmin = session.wallet.toLowerCase() === PRIMARY_ADMIN_ADDRESS.toLowerCase();
+      const resolvedRole = isPrimaryAdmin ? 'ADMIN' : getRoleForWallet(session.wallet);
       setWallet(session.wallet);
       setRole(resolvedRole);
       setAuthMethod(session.authMethod || 'wallet');
@@ -64,22 +66,27 @@ export function AuthProvider({ children }) {
         saveSession({ ...session, role: resolvedRole });
       }
 
-      // Verify on-chain and authoritative status asynchronously
-      resolveAuthoritativeRole(session.wallet).then(resRole => {
-        if (resRole) {
-          setRole(resRole);
-          saveSession({ ...session, role: resRole });
-        }
-      });
-      fetchRolesForAddress(session.wallet)
-        .then((data) => {
-          const derived = data?.assignedRole || deriveRoleFromRoleMap(data?.roles);
-          if (derived) {
-            setRole(derived);
-            saveSession({ ...session, role: derived });
+      if (isPrimaryAdmin) {
+        setRole('ADMIN');
+        saveSession({ ...session, role: 'ADMIN' });
+      } else {
+        // Verify on-chain and authoritative status asynchronously
+        resolveAuthoritativeRole(session.wallet).then(resRole => {
+          if (resRole) {
+            setRole(resRole);
+            saveSession({ ...session, role: resRole });
           }
-        })
-        .catch(() => {});
+        });
+        fetchRolesForAddress(session.wallet)
+          .then((data) => {
+            const derived = data?.assignedRole || deriveRoleFromRoleMap(data?.roles);
+            if (derived) {
+              setRole(derived);
+              saveSession({ ...session, role: derived });
+            }
+          })
+          .catch(() => {});
+      }
 
       if (session.authMethod === 'wallet' && window.ethereum) {
         window.ethereum.request({ method: 'eth_accounts' }).then(accounts => {
@@ -143,11 +150,18 @@ export function AuthProvider({ children }) {
       } else {
         const newAddr = accounts[0];
         setWallet(newAddr);
-        resolveAuthoritativeRole(newAddr).then(effRole => {
-          setRole(effRole);
+        const isPrimaryAdmin = newAddr.toLowerCase() === PRIMARY_ADMIN_ADDRESS.toLowerCase();
+        if (isPrimaryAdmin) {
+          setRole('ADMIN');
           const session = loadSession();
-          if (session) saveSession({ ...session, wallet: newAddr, role: effRole });
-        });
+          if (session) saveSession({ ...session, wallet: newAddr, role: 'ADMIN' });
+        } else {
+          resolveAuthoritativeRole(newAddr).then(effRole => {
+            setRole(effRole);
+            const session = loadSession();
+            if (session) saveSession({ ...session, wallet: newAddr, role: effRole });
+          });
+        }
       }
     });
 
@@ -182,14 +196,17 @@ export function AuthProvider({ children }) {
     }
 
     // Authoritative role resolution from on-chain, cloud store, and defaults
-    let authoritativeRole = await resolveAuthoritativeRole(address);
-    try {
-      const roleData = await fetchRolesForAddress(address);
-      const derived = deriveRoleFromRoleMap(roleData?.roles);
-      if (derived && derived !== 'USER') {
-        authoritativeRole = derived;
-      }
-    } catch {}
+    const isPrimaryAdmin = address.toLowerCase() === PRIMARY_ADMIN_ADDRESS.toLowerCase();
+    let authoritativeRole = isPrimaryAdmin ? 'ADMIN' : await resolveAuthoritativeRole(address);
+    if (!isPrimaryAdmin) {
+      try {
+        const roleData = await fetchRolesForAddress(address);
+        const derived = roleData?.assignedRole || deriveRoleFromRoleMap(roleData?.roles);
+        if (derived) {
+          authoritativeRole = derived;
+        }
+      } catch {}
+    }
 
     setWallet(address);
     setRole(authoritativeRole);
