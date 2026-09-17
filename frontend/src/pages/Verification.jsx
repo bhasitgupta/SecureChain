@@ -49,9 +49,9 @@ export default function Verification() {
     } catch (err) {
       setCurrentStep(4);
       setResult('ERROR');
-      setErrorMessage(err.message || 'Verification service unreachable — ensure gateway is running');
+      setErrorMessage(err.message || 'Cryptographic verification check failed');
       setDetails({
-        note: 'Gateway connection failed. Start the backend with: npm run dev:backend',
+        note: 'Verification check encountered an error: ' + (err.message || 'Unable to verify proof against Polygon Amoy anchor'),
       });
     } finally {
       setRunning(false);

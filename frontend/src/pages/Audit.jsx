@@ -44,6 +44,15 @@ export default function Audit() {
 
   useEffect(() => {
     loadEvents();
+    const handleUpdate = () => loadEvents();
+    window.addEventListener('sc_audit_updated', handleUpdate);
+    window.addEventListener('sc_assets_updated', handleUpdate);
+    window.addEventListener('sc_documents_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('sc_audit_updated', handleUpdate);
+      window.removeEventListener('sc_assets_updated', handleUpdate);
+      window.removeEventListener('sc_documents_updated', handleUpdate);
+    };
   }, [filter]);
 
   const filtered = events.filter(e =>

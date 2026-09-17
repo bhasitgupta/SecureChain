@@ -78,7 +78,7 @@ export default function Assets() {
     if (file) {
       setSelectedFile(file);
       try {
-        const compressed = await compressImage(file, 480, 0.82);
+        const compressed = await compressImage(file, 720, 0.90);
         if (compressed) {
           setFileBase64(compressed.dataUrl);
           setSelectedFile(compressed.file);
@@ -349,45 +349,24 @@ export default function Assets() {
                     </div>
                   </div>
                 ) : (
-                  <label 
+                  <div 
                     style={{ 
-                      height: 130, 
+                      height: 140, 
                       marginBottom: 'var(--space-md)', 
                       borderRadius: 8, 
-                      background: 'radial-gradient(ellipse at center, rgba(14, 165, 233, 0.08) 0%, #0F172A 100%)', 
+                      background: 'linear-gradient(135deg, #0B132B 0%, #1C2541 100%)', 
                       display: 'flex', 
                       flexDirection: 'column', 
                       alignItems: 'center', 
                       justifyContent: 'center', 
                       color: '#64748B', 
-                      border: '1px dashed #334155', 
-                      gap: 6,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
+                      border: '1px solid #1E293B', 
+                      gap: 8,
                     }}
-                    title="Click to attach thumbnail image to this asset"
                   >
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      style={{ display: 'none' }} 
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          try {
-                            const comp = await compressImage(file, 480, 0.82);
-                            const url = comp?.dataUrl;
-                            if (url) {
-                              saveAssetThumbnail(asset.tokenId, url);
-                              loadAssetsData();
-                            }
-                          } catch {}
-                        }
-                      }}
-                    />
-                    <Gem size={28} style={{ color: '#0EA5E9', opacity: 0.65 }} />
-                    <span className="text-xs font-mono" style={{ color: '#94A3B8' }}>+ Attach Thumbnail</span>
-                  </label>
+                    <Gem size={30} style={{ color: '#0EA5E9', opacity: 0.55 }} />
+                    <span className="text-xs font-mono" style={{ color: '#94A3B8' }}>ERC-721 Token #{asset.tokenId}</span>
+                  </div>
                 )}
 
                 <h4 style={{ marginBottom: 'var(--space-xs)' }}>

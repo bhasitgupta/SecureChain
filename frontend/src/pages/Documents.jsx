@@ -92,18 +92,20 @@ export default function Documents() {
     }
     setUploadLoading(true);
     setUploadError('');
-    setUploadSuccess('');
+    setUploadSuccess('Preparing cryptographic anchor...');
 
     try {
-      const res = await uploadDocument(uploadTitle, selectedFile);
-      setUploadSuccess(`Uploaded successfully! Version: ${res.versionId || 'V1'}`);
+      const res = await uploadDocument(uploadTitle, selectedFile, (stepText) => {
+        setUploadSuccess(stepText);
+      });
+      setUploadSuccess(res.txHash ? `Anchored on Polygon Amoy! TX: ${res.txHash.slice(0, 10)}...` : `Uploaded: ${res.versionId || 'V1'}`);
       setSelectedFile(null);
       setUploadTitle('');
       await loadDocs();
       setTimeout(() => {
         setShowUpload(false);
         setUploadSuccess('');
-      }, 1200);
+      }, 2400);
     } catch (err) {
       setUploadError(err.message || 'Upload failed');
     } finally {
