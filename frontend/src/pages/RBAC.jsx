@@ -15,6 +15,7 @@ import {
 } from '../utils/roleRegistry';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { grantRoleOnChain, revokeRoleOnChain, fetchCloudRoles, syncRolesToCloud, syncAuditEventToCloud, getAmoyGasOverrides } from '../lib/api';
+import { switchNetwork } from '../utils/walletUtils';
 import { truncateAddress, formatDate } from '../utils/formatters';
 import { ethers } from 'ethers';
 import { 
@@ -189,6 +190,11 @@ export default function RBAC() {
     let txHash = null;
 
     try {
+      if (window.ethereum) {
+        try {
+          await switchNetwork(window.ethereum);
+        } catch {}
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
@@ -201,8 +207,8 @@ export default function RBAC() {
       const iam = new ethers.Contract(iamAddr, iamAbi, signer);
 
       const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
-      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
-        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+      if (!callerIsAdmin) {
+        showNotification(`Wallet ${truncateAddress(signerAddr)} does not have ADMIN_ROLE on Polygon Amoy. Switch to admin wallet 0xff00...223e to grant admin.`, null, true);
         return;
       }
 
@@ -308,6 +314,11 @@ export default function RBAC() {
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
     try {
+      if (window.ethereum) {
+        try {
+          await switchNetwork(window.ethereum);
+        } catch {}
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
@@ -320,8 +331,8 @@ export default function RBAC() {
       const iam = new ethers.Contract(iamAddr, iamAbi, signer);
       const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
 
-      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
-        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+      if (!callerIsAdmin) {
+        showNotification(`Wallet ${truncateAddress(signerAddr)} does not have ADMIN_ROLE on Polygon Amoy. Switch to admin wallet 0xff00...223e to grant admin.`, null, true);
         return;
       }
 
@@ -426,6 +437,11 @@ export default function RBAC() {
     let txHash = null;
 
     try {
+      if (window.ethereum) {
+        try {
+          await switchNetwork(window.ethereum);
+        } catch {}
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
@@ -437,8 +453,8 @@ export default function RBAC() {
       const iam = new ethers.Contract(iamAddr, iamAbi, signer);
 
       const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
-      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
-        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+      if (!callerIsAdmin) {
+        showNotification(`Wallet ${truncateAddress(signerAddr)} does not have ADMIN_ROLE on Polygon Amoy. Switch to admin wallet 0xff00...223e to revoke on-chain.`, null, true);
         return;
       }
 
@@ -522,6 +538,11 @@ export default function RBAC() {
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
     try {
+      if (window.ethereum) {
+        try {
+          await switchNetwork(window.ethereum);
+        } catch {}
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send('eth_requestAccounts', []);
       const signer = await provider.getSigner();
@@ -534,8 +555,8 @@ export default function RBAC() {
       const roleHash = ROLE_HASHES[role];
       const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
 
-      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
-        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+      if (!callerIsAdmin) {
+        showNotification(`Wallet ${truncateAddress(signerAddr)} does not have ADMIN_ROLE on Polygon Amoy. Switch to admin wallet 0xff00...223e to approve on-chain.`, null, true);
         return;
       }
 
