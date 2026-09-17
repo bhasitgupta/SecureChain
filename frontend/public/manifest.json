@@ -1,0 +1,24 @@
+{
+  "short_name": "SecureChain",
+  "name": "SecureChain — Zero-Knowledge Enterprise Identity & Document Provenance",
+  "icons": [
+    {
+      "src": "/logo-icon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-full.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#07090e",
+  "theme_color": "#07090e",
+  "display": "standalone",
+  "orientation": "portrait",
+  "description": "Enterprise trust platform featuring zero-knowledge identity, verifiable asset ownership (ERC-721), and cryptographic Merkle document provenance anchored on Polygon Amoy."
+}
