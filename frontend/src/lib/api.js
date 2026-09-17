@@ -322,10 +322,17 @@ export function saveCachedAssets(assets) {
 }
 
 export function buildErc721MetadataURI({ name, description, assetClass, imageUrl }) {
+  // Never pass raw large base64 data URIs into on-chain calldata/storage.
+  // EVM floor data gas (EIP-7623) and storage limits will reject the transaction.
+  let onChainImage = imageUrl || '';
+  if (typeof onChainImage === 'string' && onChainImage.startsWith('data:') && onChainImage.length > 2048) {
+    onChainImage = ''; // Stored in local/decentralized cache instead of clogging on-chain calldata
+  }
+
   const metadata = {
     name: name || 'Enterprise Asset',
     description: description || `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy`,
-    image: imageUrl || '',
+    image: onChainImage,
     external_url: 'https://securechain1.vercel.app/assets',
     attributes: [
       { trait_type: 'Asset Class', value: assetClass || 'Defence Equipment' },
@@ -386,6 +393,16 @@ export function resolveThumbnail(tokenId, metadataURI, assetClass) {
     if (clean.startsWith('ipfs://')) {
       return `https://ipfs.io/ipfs/${clean.replace('ipfs://', '')}`;
     }
+  }
+
+  // 3. Fallback to local thumbnail storage
+  if (tokenId != null && typeof window !== 'undefined') {
+    try {
+      const thumbs = JSON.parse(localStorage.getItem(ASSET_THUMBNAILS_KEY) || '{}');
+      if (thumbs[String(tokenId)]) {
+        return thumbs[String(tokenId)];
+      }
+    } catch {}
   }
 
   // No fake local images — return null if on-chain metadata has no image
@@ -740,15 +757,29 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         }
       }
 
-      // STEP 6: Fire the mint transaction — single call, explicit gas
+      // STEP 6: Fire the mint transaction — dynamic gas estimation with safety margin
       if (onProgress) onProgress('Confirm in MetaMask popup...');
+
+      let txOverrides = {};
+      try {
+        const est = await nft.mint.estimateGas(
+          targetAddress,
+          didHash,
+          assetClass || 'Defence Equipment',
+          finalMetadataURI
+        );
+        txOverrides.gasLimit = (est * 130n) / 100n;
+      } catch (estErr) {
+        console.warn('[mint] Gas estimation failed, falling back to 3M limit:', estErr);
+        txOverrides.gasLimit = 3_000_000n;
+      }
 
       const tx = await nft.mint(
         targetAddress,
         didHash,
         assetClass || 'Defence Equipment',
         finalMetadataURI,
-        { gasLimit: 2_000_000 }
+        txOverrides
       );
 
       if (onProgress) onProgress('Mining on Polygon Amoy...');
@@ -766,18 +797,18 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
       }
 
       // Save thumbnail locally keyed by tokenId (non-blocking)
-      if (file && tokenId) {
-        try {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            try {
-              const thumbs = JSON.parse(localStorage.getItem('sc_asset_thumbnails') || '{}');
-              thumbs[tokenId] = reader.result;
-              localStorage.setItem('sc_asset_thumbnails', JSON.stringify(thumbs));
-            } catch {}
-          };
-          reader.readAsDataURL(file);
-        } catch {}
+      if (tokenId) {
+        if (imageUrl) {
+          saveAssetThumbnail(tokenId, imageUrl);
+        } else if (file) {
+          try {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              saveAssetThumbnail(tokenId, reader.result);
+            };
+            reader.readAsDataURL(file);
+          } catch {}
+        }
       }
 
       // Notify backend (fire-and-forget, non-blocking)
