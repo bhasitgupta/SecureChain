@@ -74,22 +74,16 @@ export default function RBAC() {
 
   const verifyOnChainStatus = async (roles) => {
     const addresses = Object.keys(roles);
-    let cloudRoles = {};
-    try {
-      cloudRoles = (await fetchCloudRoles()) || {};
-    } catch {}
+    const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
     const results = await Promise.allSettled(
       addresses.map(async (addr) => {
         const a = addr.toLowerCase();
         const onChain = await checkOnChainRole(addr);
-        const isContract = Boolean(onChain && onChain !== 'USER' && onChain === roles[addr]);
-        const isCloud = Boolean(cloudRoles && cloudRoles[a] === roles[addr]) || Boolean(DEFAULT_ROLES[a] === roles[addr]);
+        const isContract = Boolean(onChain && onChain !== 'USER' && onChain === roles[addr] && a !== iamAddr && a !== '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6');
         return { 
           addr: a, 
-          isContract,
-          isCloud,
-          isConfirmed: isContract || isCloud
+          isContract
         };
       })
     );
@@ -123,15 +117,13 @@ export default function RBAC() {
 
   const handleSyncOnChain = async () => {
     setSyncing(true);
-    showNotification('Syncing roles across Polygon Amoy & Sovereign Cloud Registry...');
+    showNotification('Syncing roles across Polygon Amoy & role directory...');
     try {
       await syncCloudRoles();
       const current = getAllWalletRoles();
       const updated = { ...current };
       const statusMap = {};
       const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
-      let cloudRoles = {};
-      try { cloudRoles = (await fetchCloudRoles()) || {}; } catch {}
 
       const addresses = Object.keys(current);
       const results = await Promise.allSettled(
@@ -149,12 +141,7 @@ export default function RBAC() {
           if (isContract) {
             updated[addr] = onChain;
           }
-          const isCloud = Boolean(cloudRoles[addr] || DEFAULT_ROLES[addr]);
-          statusMap[addr] = {
-            isContract,
-            isCloud,
-            isConfirmed: isContract || isCloud
-          };
+          statusMap[addr] = { isContract };
         }
       }
 
@@ -163,7 +150,7 @@ export default function RBAC() {
 
       setWalletRoles(updated);
       setConfirmedRoles(statusMap);
-      showNotification('Authoritative roles synced across Polygon Amoy & all devices!');
+      showNotification('Roles synced across Polygon Amoy & directory!');
     } catch (e) {
       showNotification('Completed registry sync with available data.');
     } finally {
@@ -245,7 +232,7 @@ export default function RBAC() {
     // Persist locally, sync to Cloud S3 Registry and Gateway DB
     await setWalletRole(target, newRole);
     setWalletRoles(prev => ({ ...prev, [target]: newRole }));
-    setConfirmedRoles(prev => ({ ...prev, [target]: { isCloud: true, isConfirmed: true } }));
+    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: Boolean(txHash) } }));
 
     // Record verified audit trail entry
     try {
@@ -259,7 +246,7 @@ export default function RBAC() {
           account: target,
           role: newRole,
           authority: currentWallet || 'PRIMARY_ADMIN',
-          mode: txHash ? 'ON_CHAIN' : 'SOVEREIGN_CLOUD'
+          mode: txHash ? 'ON_CHAIN' : 'CACHE_ONLY'
         },
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -272,7 +259,7 @@ export default function RBAC() {
       switchRole(newRole);
     }
 
-    showNotification(`Granted ${newRole} to ${truncateAddress(target)}! Synced across all devices.`, txHash);
+    showNotification(`Granted ${newRole} to ${truncateAddress(target)}!`, txHash);
     setNewAddress('');
   };
 
@@ -326,7 +313,7 @@ export default function RBAC() {
             }
           }
         } else {
-          showNotification('Connected wallet lacks contract ADMIN_ROLE on Amoy. Updating via Sovereign Cloud Governance.');
+          showNotification('Connected wallet lacks contract ADMIN_ROLE on Amoy. Updating in local cache.');
         }
       } catch (chainErr) {
         console.warn('On-chain role change note:', chainErr.message);
@@ -335,7 +322,7 @@ export default function RBAC() {
 
     await setWalletRole(target, role);
     setWalletRoles(prev => ({ ...prev, [target]: role }));
-    setConfirmedRoles(prev => ({ ...prev, [target]: { isCloud: true, isConfirmed: true } }));
+    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: Boolean(txHash) } }));
 
     // Record verified audit trail entry
     try {
@@ -350,7 +337,7 @@ export default function RBAC() {
           role,
           previousRole: previousRole || 'NONE',
           authority: currentWallet || 'PRIMARY_ADMIN',
-          mode: txHash ? 'ON_CHAIN' : 'SOVEREIGN_CLOUD'
+          mode: txHash ? 'ON_CHAIN' : 'CACHE_ONLY'
         },
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -363,7 +350,7 @@ export default function RBAC() {
       switchRole(role);
     }
 
-    showNotification(`Updated ${truncateAddress(target)} to ${role}. Synced across all devices.`, txHash);
+    showNotification(`Updated ${truncateAddress(target)} to ${role}.`, txHash);
   };
 
   const handleRevokeRole = async (address, role) => {
@@ -378,7 +365,11 @@ export default function RBAC() {
       delete next['0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6'];
       return next;
     });
-    setConfirmedRoles(prev => ({ ...prev, [target]: { isConfirmed: false } }));
+    setConfirmedRoles(prev => {
+      const next = { ...prev };
+      delete next[target];
+      return next;
+    });
 
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
@@ -486,6 +477,9 @@ export default function RBAC() {
 
     approveRoleRequest(reqId);
     await setWalletRole(target, role);
+    setWalletRoles(prev => ({ ...prev, [target]: role }));
+    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: Boolean(txHash) } }));
+    setRequests(prev => prev.filter(r => r.id !== reqId));
     await loadData();
 
     if (currentWallet && currentWallet.toLowerCase() === target) {
@@ -532,10 +526,10 @@ export default function RBAC() {
             className="btn btn-secondary" 
             onClick={handleSyncOnChain} 
             disabled={syncing}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
           >
-            <RefreshCw size={16} className={syncing ? 'spin' : ''} />
-            {syncing ? 'Syncing Chain...' : 'Sync with Blockchain'}
+            <RefreshCw size={14} className={syncing ? 'spin' : ''} />
+            {syncing ? 'Syncing...' : 'Sync with Blockchain'}
           </button>
         </div>
       </div>
@@ -564,7 +558,7 @@ export default function RBAC() {
         </div>
       )}
 
-      {/* Role Counts */}
+      {/* Role Counts Cards */}
       <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
         {Object.entries(roleCounts).map(([r, count]) => (
           <div key={r} className="card card-interactive">
@@ -659,7 +653,7 @@ export default function RBAC() {
           </div>
         </div>
         <p className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
-          Directly grant or modify a wallet's permissions. Roles are authoritatively synced across Polygon Amoy testnet, Cloud S3 Registry, and all devices.
+          Directly grant or modify a wallet's permissions. Roles are saved on-chain or in local registry.
         </p>
 
         <form onSubmit={handleAssignRole} className="flex gap-md" style={{ flexWrap: 'wrap' }}>
@@ -715,10 +709,8 @@ export default function RBAC() {
                   <td>
                     {confirmedRoles[addr.toLowerCase()]?.isContract ? (
                       <span className="badge badge-success" title="Verified directly on Polygon Amoy IdentityAndAccessManager smart contract">✔ On-Chain</span>
-                    ) : confirmedRoles[addr.toLowerCase()]?.isCloud || confirmedRoles[addr.toLowerCase()] ? (
-                      <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#059669', border: '1px solid rgba(16, 185, 129, 0.3)' }} title="Authoritatively verified in Cloud S3 Registry and Polygon Amoy Anchor">✔ Authoritative Sync</span>
                     ) : (
-                      <span className="badge badge-warning" title="Saved locally, pending network sync">⚠ Cache Only</span>
+                      <span className="badge badge-warning" title="Saved locally in cache/registry">⚠ Cache Only</span>
                     )}
                   </td>
                   <td style={{ textAlign: 'right' }}>

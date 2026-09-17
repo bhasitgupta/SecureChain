@@ -76,6 +76,26 @@ function saveStoredRoles(roles) {
   } catch (e) {}
 }
 
+const REVOKED_ROLES_KEY = 'sc_revoked_roles';
+
+export function getRevokedRoles() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const stored = window.localStorage.getItem(REVOKED_ROLES_KEY);
+      if (stored) return new Set(JSON.parse(stored));
+    }
+  } catch {}
+  return new Set();
+}
+
+export function saveRevokedRoles(set) {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(REVOKED_ROLES_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+}
+
 /**
  * Synchronize roles from the backend database/gateway into local storage
  */
@@ -85,19 +105,20 @@ export async function syncCloudRoles() {
     const local = getStoredRoles();
     const iamLower = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
     const legacyContract = '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6';
+    const revoked = getRevokedRoles();
     let changed = false;
 
     // Purge unwanted addresses
     if (local[legacyContract]) { delete local[legacyContract]; changed = true; }
     if (iamLower && local[iamLower]) { delete local[iamLower]; changed = true; }
     Object.keys(local).forEach(k => {
-      if (local[k] === 'USER') { delete local[k]; changed = true; }
+      if (local[k] === 'USER' || revoked.has(k)) { delete local[k]; changed = true; }
     });
 
     if (roles && typeof roles === 'object') {
       Object.entries(roles).forEach(([addr, role]) => {
         const norm = addr.toLowerCase().trim();
-        if (norm && norm !== legacyContract && norm !== iamLower && role && role !== 'USER') {
+        if (norm && norm !== legacyContract && norm !== iamLower && role && role !== 'USER' && !revoked.has(norm)) {
           if (local[norm] !== role) {
             local[norm] = role;
             changed = true;
@@ -128,17 +149,22 @@ export function getRoleForWallet(address) {
     return 'ADMIN';
   }
 
+  const revoked = getRevokedRoles();
+  if (revoked.has(normalized)) {
+    return 'USER';
+  }
+
   try {
     const roles = getAllWalletRoles();
     if (roles[normalized]) {
       return roles[normalized];
     }
-    if (DEFAULT_ROLES[normalized]) {
+    if (DEFAULT_ROLES[normalized] && !revoked.has(normalized)) {
       return DEFAULT_ROLES[normalized];
     }
     return 'USER';
   } catch (e) {
-    return DEFAULT_ROLES[normalized] || 'USER';
+    return (!revoked.has(normalized) && DEFAULT_ROLES[normalized]) || 'USER';
   }
 }
 
@@ -254,16 +280,21 @@ export function getAllWalletRoles() {
   try {
     const registry = getStoredRoles();
     const normalizedRegistry = {};
+    const revoked = getRevokedRoles();
 
-    // Load defaults first
+    // Load defaults first, skipping any revoked addresses
     Object.entries(DEFAULT_ROLES).forEach(([addr, role]) => {
-      normalizedRegistry[addr.toLowerCase().trim()] = role;
+      const norm = addr.toLowerCase().trim();
+      if (!revoked.has(norm)) {
+        normalizedRegistry[norm] = role;
+      }
     });
 
-    // Layer stored/assigned roles on top
+    // Layer stored/assigned roles on top, skipping revoked
     Object.entries(registry).forEach(([k, v]) => {
-      if (k && v) {
-        normalizedRegistry[k.toLowerCase().trim()] = v;
+      const norm = k.toLowerCase().trim();
+      if (norm && v && !revoked.has(norm)) {
+        normalizedRegistry[norm] = v;
       }
     });
 
@@ -272,7 +303,7 @@ export function getAllWalletRoles() {
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
     Object.entries(normalizedRegistry).forEach(([addr, role]) => {
       const a = addr.toLowerCase().trim();
-      if (role && role !== 'USER' && a !== iamAddr && a !== '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6') {
+      if (role && role !== 'USER' && a !== iamAddr && a !== '0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6' && !revoked.has(a)) {
         privileged[a] = role;
       }
     });
@@ -293,11 +324,18 @@ export async function setWalletRole(address, role) {
   if (!address) return;
   const normalized = address.toLowerCase().trim();
   const currentRoles = getStoredRoles();
+  const revoked = getRevokedRoles();
 
   if (role === 'USER') {
+    revoked.add(normalized);
+    saveRevokedRoles(revoked);
     delete currentRoles[normalized];
     delete memoryStore[normalized];
   } else {
+    if (revoked.has(normalized)) {
+      revoked.delete(normalized);
+      saveRevokedRoles(revoked);
+    }
     currentRoles[normalized] = role;
     memoryStore[normalized] = role;
   }
@@ -321,6 +359,11 @@ export async function removeWalletRole(address) {
   const normalized = address.toLowerCase().trim();
   const currentRoles = getStoredRoles();
   const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
+
+  // Mark in revoked store so defaults and background cloud sync never resurrect it
+  const revoked = getRevokedRoles();
+  revoked.add(normalized);
+  saveRevokedRoles(revoked);
 
   delete currentRoles[normalized];
   delete memoryStore[normalized];
