@@ -564,6 +564,49 @@ export async function compressImage(file, maxDimension = 500, quality = 0.85) {
   });
 }
 
+/**
+ * Extract a human-readable revert reason from ethers v6 CALL_EXCEPTION errors.
+ * Ethers v6 nests revert data differently depending on whether the call was
+ * a staticCall, estimateGas, or a sent transaction. This helper checks all
+ * known locations so the UI always shows the real reason, not "could not coalesce error".
+ */
+function extractRevertReason(err) {
+  if (!err) return '';
+  // 1. Direct reason string (ethers v5/v6 common path)
+  if (err.reason && typeof err.reason === 'string') return err.reason;
+  // 2. shortMessage from ethers v6 (e.g. "execution reverted: NFT: not admin")
+  if (err.shortMessage && typeof err.shortMessage === 'string') {
+    const match = err.shortMessage.match(/reverted(?:\s*(?:with reason string)?)?\s*["']?:?\s*(.+?)["']?\s*$/i);
+    if (match) return match[1].trim();
+    return err.shortMessage;
+  }
+  // 3. Nested revert args from ethers v6 CALL_EXCEPTION
+  if (err.revert && err.revert.args && err.revert.args.length > 0) {
+    return err.revert.args[0];
+  }
+  // 4. Nested info.error (ethers v6 wraps inner errors)
+  if (err.info?.error) {
+    const inner = extractRevertReason(err.info.error);
+    if (inner) return inner;
+  }
+  // 5. error.data string (raw revert data — try to decode Error(string))
+  if (err.data && typeof err.data === 'string' && err.data.startsWith('0x08c379a2')) {
+    try {
+      const decoded = ethers.AbiCoder.defaultAbiCoder().decode(['string'], '0x' + err.data.slice(10));
+      if (decoded[0]) return decoded[0];
+    } catch {}
+  }
+  // 6. Fallback to message
+  if (err.message && typeof err.message === 'string') {
+    // Filter out the unhelpful "could not coalesce error" message
+    if (err.message.includes('could not coalesce error')) {
+      return 'Transaction reverted by the smart contract. Check that your wallet has the required on-chain role (ADMIN).';
+    }
+    return err.message;
+  }
+  return '';
+}
+
 export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, onProgress }) {
   // ── FAST-PATH: Direct MetaMask on-chain execution ──
   if (typeof window !== 'undefined' && window.ethereum) {
@@ -660,7 +703,30 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         });
       }
 
-      // STEP 5: Fire the mint transaction — single call, explicit gas, no fallback retry
+      // STEP 5: Pre-flight staticCall to catch reverts BEFORE MetaMask prompts
+      if (onProgress) onProgress('Validating on-chain permissions...');
+
+      try {
+        await nft.mint.staticCall(
+          targetAddress,
+          didHash,
+          assetClass || 'Defence Equipment',
+          finalMetadataURI,
+        );
+      } catch (staticErr) {
+        // Extract the actual revert reason from ethers v6 error structure
+        const revertReason = extractRevertReason(staticErr);
+        if (revertReason.includes('not admin')) {
+          throw new Error(
+            'Your wallet does not have ADMIN role on the on-chain IAM contract. ' +
+            'Ask the contract owner to call grantRole(ADMIN_ROLE, yourAddress) on the IdentityAndAccessManager, ' +
+            'or use the RBAC page to assign the role first.'
+          );
+        }
+        throw new Error(revertReason || 'On-chain validation failed — the contract rejected this transaction.');
+      }
+
+      // STEP 6: Fire the mint transaction — single call, explicit gas
       if (onProgress) onProgress('Confirm in MetaMask popup...');
 
       const tx = await nft.mint(
@@ -668,7 +734,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         didHash,
         assetClass || 'Defence Equipment',
         finalMetadataURI,
-        { gasLimit: 280000 }
+        { gasLimit: 2_000_000 }
       );
 
       if (onProgress) onProgress('Mining on Polygon Amoy...');
@@ -730,7 +796,8 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         throw new Error('Transaction rejected in wallet');
       }
       console.warn('MetaMask on-chain mint failed:', metaMaskErr);
-      throw new Error(metaMaskErr.reason || metaMaskErr.shortMessage || metaMaskErr.message || 'On-chain mint failed');
+      const reason = extractRevertReason(metaMaskErr);
+      throw new Error(reason || 'On-chain mint failed');
     }
   }
 
