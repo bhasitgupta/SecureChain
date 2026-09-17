@@ -716,14 +716,28 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
       } catch (staticErr) {
         // Extract the actual revert reason from ethers v6 error structure
         const revertReason = extractRevertReason(staticErr);
-        if (revertReason.includes('not admin')) {
+        // If revert data is missing (custom error / RPC didn't return reason),
+        // skip the pre-flight and let the real tx attempt proceed — MetaMask will
+        // surface the actual error to the user.
+        const uselessReasons = [
+          'missing revert data',
+          'could not coalesce',
+          'CALL_EXCEPTION',
+          '',
+        ];
+        const isUseless = !revertReason || uselessReasons.some(r => revertReason.toLowerCase().includes(r.toLowerCase()));
+        if (isUseless) {
+          // Non-blocking — continue to real tx
+          console.warn('[staticCall] no useful revert reason, proceeding to real tx:', staticErr);
+        } else if (revertReason.toLowerCase().includes('not admin')) {
           throw new Error(
             'Your wallet does not have ADMIN role on the on-chain IAM contract. ' +
             'Ask the contract owner to call grantRole(ADMIN_ROLE, yourAddress) on the IdentityAndAccessManager, ' +
             'or use the RBAC page to assign the role first.'
           );
+        } else {
+          throw new Error(revertReason);
         }
-        throw new Error(revertReason || 'On-chain validation failed — the contract rejected this transaction.');
       }
 
       // STEP 6: Fire the mint transaction — single call, explicit gas

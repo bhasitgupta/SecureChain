@@ -518,7 +518,7 @@ export default function Assets() {
                   onClick={handleMint}
                   disabled={mintLoading}
                 >
-                  {mintLoading ? <><Loader2 size={16} className="spin" /> {mintStep || 'Confirming in Wallet...'}</> : 'Mint On-Chain (MetaMask)'}
+                  {mintLoading ? <><Loader2 size={16} className="spin" /> {mintStep || 'Confirming in Wallet...'}</> : 'Mint On-Chain'}
                 </button>
                 <button className="btn btn-secondary" onClick={() => setShowMint(false)}>Cancel</button>
               </div>
