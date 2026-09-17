@@ -14,7 +14,7 @@ import {
   PRIMARY_ADMIN_ADDRESS
 } from '../utils/roleRegistry';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
-import { grantRoleOnChain, revokeRoleOnChain, fetchCloudRoles, syncRolesToCloud, syncAuditEventToCloud } from '../lib/api';
+import { grantRoleOnChain, revokeRoleOnChain, fetchCloudRoles, syncRolesToCloud, syncAuditEventToCloud, getAmoyGasOverrides } from '../lib/api';
 import { truncateAddress, formatDate } from '../utils/formatters';
 import { ethers } from 'ethers';
 import { 
@@ -206,6 +206,9 @@ export default function RBAC() {
         return;
       }
 
+      // Safe dynamic gas overrides to satisfy Polygon Amoy Bor minPriorityFee (35-45 Gwei)
+      const gasOverrides = await getAmoyGasOverrides(provider);
+
       // If target held a different privileged role on-chain, revoke it first
       const allRoles = ['ADMIN', 'MANAGER', 'AUDITOR'];
       for (const r of allRoles) {
@@ -215,7 +218,10 @@ export default function RBAC() {
           if (hasOld) {
             showNotification(`Revoking previous ${r} role on Polygon Amoy... Confirm in wallet.`);
             const estRev = await iam.revokeRole.estimateGas(rHash, target).catch(() => 120000n);
-            const revTx = await iam.revokeRole(rHash, target, { gasLimit: (estRev * 130n) / 100n });
+            const revTx = await iam.revokeRole(rHash, target, { 
+              gasLimit: (estRev * 130n) / 100n,
+              ...gasOverrides
+            });
             showNotification(`Revoke submitted: ${truncateAddress(revTx.hash)}. Mining...`);
             await revTx.wait(1);
           }
@@ -228,7 +234,10 @@ export default function RBAC() {
       if (!alreadyHas) {
         showNotification(`Granting ${newRole} on-chain... Confirm gas fee in MetaMask.`);
         const estGrant = await iam.grantRole.estimateGas(roleHash, target).catch(() => 120000n);
-        const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGrant * 130n) / 100n });
+        const tx = await iam.grantRole(roleHash, target, { 
+          gasLimit: (estGrant * 130n) / 100n,
+          ...gasOverrides
+        });
         showNotification(`MetaMask tx submitted: ${truncateAddress(tx.hash)}. Confirming on Polygon Amoy...`);
         await tx.wait(1);
         txHash = tx.hash;
@@ -316,6 +325,9 @@ export default function RBAC() {
         return;
       }
 
+      // Safe dynamic gas overrides to satisfy Polygon Amoy Bor minPriorityFee (35-45 Gwei)
+      const gasOverrides = await getAmoyGasOverrides(provider);
+
       // Revoke any previous privileged role held on-chain
       const allRoles = ['ADMIN', 'MANAGER', 'AUDITOR'];
       for (const r of allRoles) {
@@ -325,7 +337,10 @@ export default function RBAC() {
           if (hasOld) {
             showNotification(`Revoking previous ${r} on Polygon Amoy... Confirm in wallet.`);
             const estRev = await iam.revokeRole.estimateGas(rHash, target).catch(() => 120000n);
-            const revTx = await iam.revokeRole(rHash, target, { gasLimit: (estRev * 130n) / 100n });
+            const revTx = await iam.revokeRole(rHash, target, { 
+              gasLimit: (estRev * 130n) / 100n,
+              ...gasOverrides
+            });
             await revTx.wait(1);
           }
         }
@@ -337,7 +352,10 @@ export default function RBAC() {
         if (!alreadyHas) {
           showNotification(`Granting ${role} on-chain... Confirm gas fee in MetaMask.`);
           const estGrant = await iam.grantRole.estimateGas(roleHash, target).catch(() => 120000n);
-          const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGrant * 130n) / 100n });
+          const tx = await iam.grantRole(roleHash, target, { 
+            gasLimit: (estGrant * 130n) / 100n,
+            ...gasOverrides
+          });
           showNotification(`Transaction submitted: ${truncateAddress(tx.hash)}. Mining...`);
           await tx.wait(1);
           txHash = tx.hash;
@@ -424,6 +442,9 @@ export default function RBAC() {
         return;
       }
 
+      // Safe dynamic gas overrides to satisfy Polygon Amoy Bor minPriorityFee (35-45 Gwei)
+      const gasOverrides = await getAmoyGasOverrides(provider);
+
       // Check all roles held on-chain by target
       const allRoles = ['ADMIN', 'MANAGER', 'AUDITOR'];
       let revokedAny = false;
@@ -433,7 +454,10 @@ export default function RBAC() {
         if (isHeld) {
           showNotification(`Revoking ${r} on Polygon Amoy... Confirm gas fee in MetaMask.`);
           const estGas = await iam.revokeRole.estimateGas(rHash, target).catch(() => 120000n);
-          const tx = await iam.revokeRole(rHash, target, { gasLimit: (estGas * 130n) / 100n });
+          const tx = await iam.revokeRole(rHash, target, { 
+            gasLimit: (estGas * 130n) / 100n,
+            ...gasOverrides
+          });
           showNotification(`Revoke submitted: ${truncateAddress(tx.hash)}. Confirming on Polygon Amoy...`);
           await tx.wait(1);
           txHash = tx.hash;
@@ -518,8 +542,12 @@ export default function RBAC() {
       if (roleHash) {
         const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
         if (!alreadyHas) {
+          const gasOverrides = await getAmoyGasOverrides(provider);
           const estGas = await iam.grantRole.estimateGas(roleHash, target).catch(() => 120000n);
-          const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGas * 130n) / 100n });
+          const tx = await iam.grantRole(roleHash, target, { 
+            gasLimit: (estGas * 130n) / 100n,
+            ...gasOverrides
+          });
           showNotification(`Approval tx submitted: ${truncateAddress(tx.hash)}. Mining...`);
           await tx.wait(1);
           txHash = tx.hash;
