@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, truncateAddress, getStatusColor } from '../utils/formatters';
 import { fetchIdentities, registerIdentity } from '../lib/api';
+import { getRoleForWallet } from '../utils/roleRegistry';
 import { 
   UserPlus, Search, Fingerprint, AlertCircle, CheckCircle2, 
   Loader2, X, RefreshCw, ExternalLink, Copy, Check, ShieldCheck, Wallet 
@@ -19,7 +20,7 @@ export default function Identity() {
 
   // Form State
   const [account, setAccount] = useState('');
-  const [subjectId, setSubjectId] = useState('');
+  const [selectedRole, setSelectedRole] = useState('USER');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState(null);
@@ -29,16 +30,20 @@ export default function Identity() {
     try {
       const data = await fetchIdentities();
       if (Array.isArray(data)) {
-        setIdentities(data.map(i => ({
-          name: i.name || i.subject_id || i.subjectId || 'Enterprise Principal',
-          did: i.did || `did:pkh:eip155:80002:${i.address || i.account}`,
-          address: (i.address || i.account || '').toLowerCase(),
-          role: i.role || 'USER',
-          status: i.status || 'Active',
-          createdAt: i.createdAt || i.created_at || Date.now(),
-          txHash: i.txHash || i.tx_hash || null,
-          onChain: i.onChain !== false,
-        })));
+        setIdentities(data.map(i => {
+          const addr = (i.address || i.account || '').toLowerCase();
+          const effectiveRole = getRoleForWallet(addr) || i.role || (['ADMIN', 'MANAGER', 'AUDITOR', 'USER'].includes(i.name) ? i.name : 'USER');
+          return {
+            name: effectiveRole,
+            role: effectiveRole,
+            did: i.did || `did:pkh:eip155:80002:${addr}`,
+            address: addr,
+            status: i.status || 'Active',
+            createdAt: i.createdAt || i.created_at || Date.now(),
+            txHash: i.txHash || i.tx_hash || null,
+            onChain: i.onChain !== false,
+          };
+        }));
       }
     } catch (err) {
       console.warn('Failed to load identities:', err);
@@ -55,9 +60,11 @@ export default function Identity() {
     };
 
     window.addEventListener('sc_identities_updated', handleLiveSync);
+    window.addEventListener('sc_role_updated', handleLiveSync);
     window.addEventListener('storage', handleLiveSync);
     return () => {
       window.removeEventListener('sc_identities_updated', handleLiveSync);
+      window.removeEventListener('sc_role_updated', handleLiveSync);
       window.removeEventListener('storage', handleLiveSync);
     };
   }, []);
@@ -66,6 +73,7 @@ export default function Identity() {
     setShowModal(true);
     setErrorMsg('');
     setSuccessMsg(null);
+    setSelectedRole('USER');
     if (!account && wallet) {
       setAccount(wallet);
     }
@@ -85,8 +93,8 @@ export default function Identity() {
   };
 
   const handleRegister = async () => {
-    if (!account || !subjectId) {
-      setErrorMsg('Wallet address and Subject ID / Department are required');
+    if (!account) {
+      setErrorMsg('Wallet address is required');
       return;
     }
     setLoading(true);
@@ -94,7 +102,7 @@ export default function Identity() {
     setSuccessMsg(null);
 
     try {
-      const res = await registerIdentity(account, subjectId);
+      const res = await registerIdentity(account, selectedRole);
       setSuccessMsg({
         did: res.did || `did:pkh:eip155:80002:${account.toLowerCase()}`,
         txHash: res.txHash,
@@ -104,7 +112,7 @@ export default function Identity() {
         setShowModal(false);
         setSuccessMsg(null);
         setAccount('');
-        setSubjectId('');
+        setSelectedRole('USER');
       }, 3500);
     } catch (err) {
       setErrorMsg(err.message || 'Identity registration failed');
@@ -114,10 +122,9 @@ export default function Identity() {
   };
 
   const filtered = identities.filter(i =>
-    (i.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (i.role || '').toLowerCase().includes(search.toLowerCase()) ||
     (i.did || '').toLowerCase().includes(search.toLowerCase()) ||
-    (i.address || '').toLowerCase().includes(search.toLowerCase()) ||
-    (i.role || '').toLowerCase().includes(search.toLowerCase())
+    (i.address || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -152,7 +159,7 @@ export default function Identity() {
               <Search size={16} className="search-icon" />
               <input 
                 className="input search-input" 
-                placeholder="Search by name, DID, or wallet..." 
+                placeholder="Search by role, DID, or wallet..." 
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 
               />
@@ -168,7 +175,7 @@ export default function Identity() {
         <table className="table">
           <thead>
             <tr>
-              <th>Name / Subject</th>
+              <th>Role</th>
               <th>DID (W3C PKH)</th>
               <th>Wallet</th>
               <th>Status</th>
@@ -183,8 +190,10 @@ export default function Identity() {
                 <tr key={id.did || idx}>
                   <td className="font-weight-500">
                     <div className="flex items-center gap-xs">
-                      <ShieldCheck size={16} style={{ color: 'var(--primary-color)', flexShrink: 0 }} />
-                      <span>{id.name}</span>
+                      <ShieldCheck size={16} style={{ color: id.role === 'ADMIN' ? 'var(--color-action)' : 'var(--primary-color)', flexShrink: 0 }} />
+                      <span className={`badge role-${id.role.toLowerCase()}`} style={{ fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.04em' }}>
+                        {id.role}
+                      </span>
                     </div>
                   </td>
                   <td>
@@ -285,38 +294,29 @@ export default function Identity() {
 
             <div className="flex flex-col gap-md">
               <div className="input-group">
-                <label>Subject Full Name / Department Identifier</label>
-                <input 
+                <label>Assigned Role</label>
+                <select 
                   className="input" 
-                  placeholder="e.g. Directorate General of Strategic Logistics"
-                  value={subjectId}
-                  onChange={e => setSubjectId(e.target.value)}
-                />
+                  value={selectedRole}
+                  onChange={e => setSelectedRole(e.target.value)}
+                >
+                  <option value="ADMIN">ADMIN (Full Governance)</option>
+                  <option value="MANAGER">MANAGER (Asset & Doc Admin)</option>
+                  <option value="AUDITOR">AUDITOR (Read & Verify Only)</option>
+                  <option value="USER">USER (Standard Access)</option>
+                </select>
                 <div className="flex gap-xs" style={{ marginTop: '6px', flexWrap: 'wrap' }}>
-                  <button 
-                    type="button" 
-                    className="btn btn-ghost text-xs" 
-                    style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid var(--border-color)' }}
-                    onClick={() => setSubjectId('Directorate General of Strategic Logistics')}
-                  >
-                    + Logistics
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-ghost text-xs" 
-                    style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid var(--border-color)' }}
-                    onClick={() => setSubjectId('Defense Cyber Operations Command')}
-                  >
-                    + Cyber Ops
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-ghost text-xs" 
-                    style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid var(--border-color)' }}
-                    onClick={() => setSubjectId('Lead Compliance & Audit Officer')}
-                  >
-                    + Lead Auditor
-                  </button>
+                  {['ADMIN', 'MANAGER', 'AUDITOR', 'USER'].map(r => (
+                    <button 
+                      key={r}
+                      type="button" 
+                      className={`btn btn-ghost text-xs ${selectedRole === r ? 'btn-primary' : ''}`} 
+                      style={{ padding: '2px 8px', fontSize: '11px', border: '1px solid var(--border-color)' }}
+                      onClick={() => setSelectedRole(r)}
+                    >
+                      + {r}
+                    </button>
+                  ))}
                 </div>
               </div>
 

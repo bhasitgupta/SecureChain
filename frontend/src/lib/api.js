@@ -2415,7 +2415,7 @@ export async function fetchIdentities() {
   // Baseline verified enterprise principals
   const baseline = [
     {
-      name: 'Chief Information Security Officer (Primary Admin)',
+      name: 'ADMIN',
       did: 'did:pkh:eip155:80002:0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c',
       address: '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c',
       role: 'ADMIN',
@@ -2425,7 +2425,7 @@ export async function fetchIdentities() {
       onChain: true,
     },
     {
-      name: 'SecureChain Deployer & Relayer Node',
+      name: 'ADMIN',
       did: 'did:pkh:eip155:80002:0xff00d19db6668537116ecda91ac07fa448a2223e',
       address: '0xff00d19db6668537116ecda91ac07fa448a2223e',
       role: 'ADMIN',
@@ -2435,10 +2435,10 @@ export async function fetchIdentities() {
       onChain: true,
     },
     {
-      name: 'Directorate General of Audit & Compliance',
+      name: 'MANAGER',
       did: 'did:pkh:eip155:80002:0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a',
       address: '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a',
-      role: 'AUDITOR',
+      role: 'MANAGER',
       status: 'Active',
       createdAt: 1726550400000,
       txHash: '0x4631a171f0a6593db35091639cb149eaae37286e9292fae701d102ae2bdeded0',
@@ -2517,6 +2517,7 @@ export async function registerIdentity(account, subjectId) {
   const did = `did:pkh:eip155:80002:${norm}`;
   const didHash = ethers.id(did);
   let txHash = null;
+  const role = (['ADMIN', 'MANAGER', 'AUDITOR', 'USER'].includes(subjectId) ? subjectId : 'USER');
 
   const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager || '0x0Ca09ba889727bE9FbBAA53d2fE1541bF2f8cee6';
   const iamAbi = [
@@ -2538,8 +2539,8 @@ export async function registerIdentity(account, subjectId) {
         const rec = await iam.getIdentity(existingDid).catch(() => null);
         if (rec?.subjectId) subjectId = rec.subjectId;
       } else {
-        const estGas = await iam.registerIdentity.estimateGas(didHash, norm, subjectId).catch(() => 150000n);
-        const tx = await iam.registerIdentity(didHash, norm, subjectId, {
+        const estGas = await iam.registerIdentity.estimateGas(didHash, norm, role).catch(() => 150000n);
+        const tx = await iam.registerIdentity(didHash, norm, role, {
           gasLimit: (estGas * 130n) / 100n,
         });
         txHash = tx.hash;
@@ -2556,7 +2557,7 @@ export async function registerIdentity(account, subjectId) {
       const res = await apiFetch('/identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account: norm, subjectId }),
+        body: JSON.stringify({ account: norm, subjectId: role }),
       });
       if (res?.txHash) txHash = res.txHash;
     } catch {}
@@ -2568,10 +2569,10 @@ export async function registerIdentity(account, subjectId) {
   }
 
   const newIdentity = {
-    name: subjectId,
+    name: role,
     did,
     address: norm,
-    role: 'USER',
+    role,
     status: 'Active',
     createdAt: Date.now(),
     txHash,
