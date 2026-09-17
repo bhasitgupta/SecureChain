@@ -70,6 +70,18 @@ export default function Assets() {
 
   useEffect(() => {
     loadAssetsData();
+  }, []);
+
+  // Keyboard shortcut: close preview on Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setPreviewModal(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     const handleUpdate = () => loadAssetsData();
     window.addEventListener('sc_assets_updated', handleUpdate);
     window.addEventListener('storage', handleUpdate);
@@ -138,16 +150,11 @@ export default function Assets() {
         setMintSuccess({
           tokenId: res.tokenId,
           txHash: res.txHash,
+          thumbnailUrl: res.thumbnailUrl || finalImage || '',
+          description: description.trim(),
+          assetClass,
         });
         await loadAssetsData();
-        setTimeout(() => {
-          setShowMint(false);
-          setMintSuccess(null);
-          setDescription('');
-          setSelectedFile(null);
-          setFileBase64(null);
-          setMintStep('');
-        }, 3200);
       } else {
         throw new Error('Minting failed: no token ID returned');
       }
@@ -483,14 +490,66 @@ export default function Assets() {
             )}
 
             {mintSuccess && (
-              <div className="flex items-center gap-sm p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46' }}>
-                <CheckCircle2 size={16} />
-                <span>
-                  Successfully Minted Token #{mintSuccess.tokenId}!
-                  {mintSuccess.txHash && (
-                    <> — <a href={`https://amoy.polygonscan.com/tx/${mintSuccess.txHash}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600 }}>View on Polygonscan</a></>
-                  )}
-                </span>
+              <div className="p-3 rounded text-sm mb-3" style={{ background: '#D1FAE5', color: '#065F46', border: '1px solid #A7F3D0' }}>
+                <div className="flex items-center gap-sm">
+                  <CheckCircle2 size={18} style={{ flexShrink: 0 }} />
+                  <div>
+                    <strong>Successfully Minted Token #{mintSuccess.tokenId}!</strong>
+                    {mintSuccess.txHash && (
+                      <div>
+                        <a 
+                          href={`https://amoy.polygonscan.com/tx/${mintSuccess.txHash}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          style={{ textDecoration: 'underline', color: '#065F46', fontWeight: 600, fontSize: '0.82rem' }}
+                        >
+                          View Transaction on Polygonscan →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {mintSuccess.thumbnailUrl && (
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div 
+                      onClick={() => setPreviewModal({
+                        tokenId: mintSuccess.tokenId,
+                        description: mintSuccess.description || `Token #${mintSuccess.tokenId}`,
+                        assetClass: mintSuccess.assetClass || 'Defence Equipment',
+                        assetStatus: 'Active',
+                        ownerName: toAddress || wallet || 'You',
+                        thumbnailUrl: mintSuccess.thumbnailUrl,
+                        txHash: mintSuccess.txHash,
+                      })}
+                      title="Click thumbnail to enlarge full screen"
+                      style={{ 
+                        width: 72, 
+                        height: 72, 
+                        borderRadius: 6, 
+                        overflow: 'hidden', 
+                        cursor: 'zoom-in', 
+                        border: '2px solid #059669',
+                        position: 'relative',
+                        flexShrink: 0,
+                        background: '#0F172A'
+                      }}
+                    >
+                      <img 
+                        src={mintSuccess.thumbnailUrl} 
+                        alt="Minted Asset Thumbnail" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      />
+                      <div style={{ position: 'absolute', bottom: 2, right: 2, background: 'rgba(0,0,0,0.7)', borderRadius: 3, padding: '1px 3px', color: '#fff', fontSize: '8px', display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <ZoomIn size={8} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold" style={{ color: '#065F46' }}>Minted Asset Thumbnail</div>
+                      <div className="text-xs" style={{ color: '#047857' }}>Click thumbnail image to open and enlarge on full screen</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -542,12 +601,37 @@ export default function Assets() {
 
               {/* Real Image Preview */}
               {fileBase64 && (
-                <div style={{ height: 120, borderRadius: 6, overflow: 'hidden', background: '#0F172A', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div 
+                  onClick={() => setPreviewModal({
+                    tokenId: 'Draft',
+                    description: description || 'Draft Asset Preview',
+                    assetClass,
+                    assetStatus: 'Active',
+                    ownerName: wallet || 'You',
+                    thumbnailUrl: fileBase64,
+                  })}
+                  title="Click thumbnail to enlarge full screen"
+                  style={{ 
+                    height: 120, 
+                    borderRadius: 6, 
+                    overflow: 'hidden', 
+                    background: '#0F172A', 
+                    border: '1px solid #334155', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    cursor: 'zoom-in',
+                    position: 'relative'
+                  }}
+                >
                   <img 
                     src={fileBase64} 
                     alt="Preview" 
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                   />
+                  <div className="thumbnail-zoom-hint">
+                    <ZoomIn size={13} /> Click to enlarge full screen
+                  </div>
                 </div>
               )}
 
@@ -629,105 +713,119 @@ export default function Assets() {
         </div>
       )}
 
-      {/* High-Resolution HD Image Lightbox Modal */}
+      {/* High-Resolution HD Image Fullscreen Lightbox Modal */}
       {previewModal && (
         <div 
           className="modal-overlay animate-fade-in" 
           onClick={() => setPreviewModal(null)}
           style={{ 
-            background: 'rgba(2, 6, 23, 0.88)', 
-            backdropFilter: 'blur(10px)',
-            zIndex: 9999,
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2, 6, 23, 0.94)', 
+            backdropFilter: 'blur(16px)',
+            zIndex: 99999,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: 'var(--space-md)'
+            padding: 'var(--space-md)',
+            cursor: 'zoom-out',
           }}
+          title="Click anywhere outside the image to close"
         >
+          {/* Header Bar */}
           <div 
-            className="card animate-fade-scale" 
-            onClick={e => e.stopPropagation()}
             style={{ 
-              maxWidth: '92vw', 
-              maxHeight: '92vh', 
-              width: 'auto',
+              width: '100%', 
+              maxWidth: '920px', 
               display: 'flex', 
-              flexDirection: 'column', 
-              padding: 'var(--space-md)',
-              background: '#0B132B',
-              border: '1px solid #1E293B',
-              borderRadius: 12,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)'
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: 12,
+              cursor: 'default',
             }}
+            onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-sm)', gap: 'var(--space-md)' }}>
-              <div className="flex items-center gap-sm">
-                <span className="badge badge-info font-mono">Token #{previewModal.tokenId}</span>
-                <span style={{ fontWeight: 600, fontSize: '1.05rem', color: '#F8FAFC' }}>
-                  {previewModal.description?.startsWith('data:') 
-                    ? (parseMetadataURI(previewModal.description)?.name || `Asset #${previewModal.tokenId}`) 
-                    : (previewModal.description || `Asset #${previewModal.tokenId}`)}
-                </span>
-                <span className={`badge badge-${getStatusColor(previewModal.assetStatus)}`}>{previewModal.assetStatus}</span>
-              </div>
+            <div className="flex items-center gap-sm">
+              <span className="badge badge-info font-mono">Token #{previewModal.tokenId}</span>
+              <span style={{ fontWeight: 600, fontSize: '1.1rem', color: '#F8FAFC' }}>
+                {previewModal.description?.startsWith('data:') 
+                  ? (parseMetadataURI(previewModal.description)?.name || `Asset #${previewModal.tokenId}`) 
+                  : (previewModal.description || `Asset #${previewModal.tokenId}`)}
+              </span>
+              <span className={`badge badge-${getStatusColor(previewModal.assetStatus)}`}>{previewModal.assetStatus}</span>
+            </div>
+
+            <div className="flex items-center gap-sm">
+              {previewModal.thumbnailUrl && (
+                <button 
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => window.open(previewModal.thumbnailUrl, '_blank')}
+                  title="Open high resolution original in new tab"
+                >
+                  HD Original <ExternalLink size={12} />
+                </button>
+              )}
+              {previewModal.txHash && (
+                <button 
+                  className="btn btn-ghost btn-xs text-action font-mono"
+                  onClick={() => window.open(`https://amoy.polygonscan.com/tx/${previewModal.txHash}`, '_blank')}
+                  title="View Polygon Amoy transaction"
+                >
+                  TX Hash <ExternalLink size={12} />
+                </button>
+              )}
               <button 
                 className="btn-icon btn-ghost" 
                 onClick={() => setPreviewModal(null)} 
                 title="Close (Esc)"
+                style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '50%', padding: 6 }}
               >
-                <X size={20} />
+                <X size={22} />
               </button>
             </div>
+          </div>
 
-            <div 
+          {/* Large Image Container */}
+          <div 
+            style={{ 
+              position: 'relative',
+              maxWidth: '92vw', 
+              maxHeight: '82vh', 
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <img 
+              src={previewModal.thumbnailUrl} 
+              alt={previewModal.description} 
               style={{ 
-                flex: 1, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                overflow: 'hidden',
-                borderRadius: 8,
-                background: '#020617',
-                border: '1px solid #1E293B',
-                maxHeight: '70vh',
-                minWidth: 'min(480px, 85vw)',
-              }}
-            >
-              <img 
-                src={previewModal.thumbnailUrl} 
-                alt={previewModal.description} 
-                style={{ 
-                  maxWidth: '100%', 
-                  maxHeight: '70vh', 
-                  objectFit: 'contain',
-                  display: 'block'
-                }} 
-              />
-            </div>
+                maxWidth: '92vw', 
+                maxHeight: '80vh', 
+                objectFit: 'contain',
+                borderRadius: 10,
+                boxShadow: '0 25px 60px -10px rgba(0, 0, 0, 0.95)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                cursor: 'default',
+                display: 'block',
+              }} 
+            />
+          </div>
 
-            <div className="flex items-center justify-between" style={{ marginTop: 'var(--space-sm)', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
-              <div className="text-xs text-secondary">
-                <span className="text-tertiary">Asset Class:</span> {previewModal.assetClass} • <span className="text-tertiary">Owner:</span> <span className="font-mono">{typeof previewModal.ownerName === 'string' && previewModal.ownerName.startsWith('0x') ? `${previewModal.ownerName.slice(0, 8)}...${previewModal.ownerName.slice(-6)}` : previewModal.ownerName}</span>
-              </div>
-              <div className="flex items-center gap-sm">
-                {previewModal.thumbnailUrl && (
-                  <button 
-                    className="btn btn-ghost btn-xs"
-                    onClick={() => window.open(previewModal.thumbnailUrl, '_blank')}
-                  >
-                    Open Original HD <ExternalLink size={12} />
-                  </button>
-                )}
-                {previewModal.txHash && (
-                  <button 
-                    className="btn btn-ghost btn-xs text-action font-mono"
-                    onClick={() => window.open(`https://amoy.polygonscan.com/tx/${previewModal.txHash}`, '_blank')}
-                  >
-                    TX Hash <ExternalLink size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
+          {/* Footer Subtitle */}
+          <div 
+            style={{ 
+              marginTop: 12, 
+              color: '#94A3B8', 
+              fontSize: '0.82rem', 
+              cursor: 'default',
+              textAlign: 'center'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <span>Click anywhere outside the image or press <kbd style={{ background: '#1E293B', padding: '2px 6px', borderRadius: 4, color: '#E2E8F0' }}>Esc</kbd> to close</span>
           </div>
         </div>
       )}

@@ -6,6 +6,8 @@ import {
   uploadDocument, 
   fetchDocumentDetail, 
   getDocumentDownloadUrl,
+  downloadDocumentArtifact,
+  downloadProofCertificate,
   uploadDocumentRevision 
 } from '../lib/api';
 import { 
@@ -60,6 +62,9 @@ export default function Documents() {
           updatedAt: d.updated_at || d.updatedAt || Date.now(),
           versions: d.versions || [],
           txHash: d.tx_hash || d.txHash || null,
+          cloudDocUrl: d.cloudDocUrl || d.cloud_doc_url || null,
+          fileDataUrl: d.fileDataUrl || null,
+          fileName: d.fileName || d.file_name || null,
         })));
       }
     } catch (err) {
@@ -123,6 +128,9 @@ export default function Documents() {
         setSelectedDoc(prev => ({
           ...prev,
           versions: detail.versions || prev.versions || [],
+          cloudDocUrl: detail.cloudDocUrl || prev.cloudDocUrl,
+          fileDataUrl: detail.fileDataUrl || prev.fileDataUrl,
+          fileName: detail.fileName || prev.fileName,
         }));
       }
     } catch {}
@@ -130,10 +138,15 @@ export default function Documents() {
 
   const handleDownload = async (docId, versionId) => {
     try {
-      const url = await getDocumentDownloadUrl(docId, versionId);
-      if (url) window.open(url, '_blank');
+      const doc = documents.find(d => d.documentId === docId) || selectedDoc;
+      if (doc) {
+        await downloadDocumentArtifact(doc, versionId);
+      }
     } catch (err) {
-      alert('Download error: ' + err.message);
+      console.error('Download error:', err);
+      if (selectedDoc) {
+        downloadProofCertificate(selectedDoc);
+      }
     }
   };
 
@@ -225,7 +238,17 @@ export default function Documents() {
                 <td><span className={`badge badge-${getStatusColor(doc.status)}`}>{doc.status}</span></td>
                 <td className="text-sm">{doc.owner}</td>
                 <td className="text-sm text-secondary">{formatDate(doc.updatedAt)}</td>
-                <td><ChevronRight size={16} className="text-tertiary" /></td>
+                <td onClick={e => e.stopPropagation()} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <button 
+                    className="btn btn-ghost btn-xs" 
+                    title="Download Document"
+                    onClick={() => handleDownload(doc.documentId, doc.latestVersion)}
+                    style={{ padding: '4px 6px', marginRight: 4 }}
+                  >
+                    <Download size={14} />
+                  </button>
+                  <ChevronRight size={16} className="text-tertiary" style={{ display: 'inline', verticalAlign: 'middle' }} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -362,8 +385,8 @@ export default function Documents() {
                         <span className={`badge badge-${getStatusColor(v.state || v.status || 'VERIFIABLE')}`}>{v.state || v.status || 'VERIFIABLE'}</span>
                         <button 
                           className="btn btn-ghost btn-xs" 
-                          title="Download Decrypted Original"
-                          onClick={() => handleDownload(selectedDoc.documentId, v.version_id || v.versionId)}
+                          title="Download Document Version"
+                          onClick={() => handleDownload(selectedDoc.documentId, v.version_id || v.versionId || v.seq)}
                         >
                           <Download size={14} />
                         </button>
@@ -392,6 +415,50 @@ export default function Documents() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Bottom Action Footer for Document & Verification Certificate Download */}
+            <div 
+              className="card" 
+              style={{ 
+                marginTop: 'var(--space-lg)', 
+                padding: 'var(--space-md)', 
+                background: '#0B132B', 
+                border: '1px solid #1E293B', 
+                borderRadius: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 'var(--space-md)'
+              }}
+            >
+              <div>
+                <div className="text-xs text-tertiary">CONFIDENTIAL ASSET DOCUMENT</div>
+                <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#F8FAFC' }}>{selectedDoc.title}</div>
+                <div className="text-xs text-secondary font-mono">
+                  {selectedDoc.fileName || `${selectedDoc.title}.pdf`} • SHA-256: {truncateHash(selectedDoc.hash)}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-sm">
+                <button 
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => downloadProofCertificate(selectedDoc)}
+                  title="Download verifiable cryptographic JSON anchor certificate"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <FileText size={14} /> Download Certificate
+                </button>
+                <button 
+                  className="btn btn-primary btn-sm"
+                  onClick={() => handleDownload(selectedDoc.documentId, selectedDoc.latestVersion)}
+                  title="Download confidential document file"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Download size={14} /> Download Document
+                </button>
+              </div>
             </div>
           </div>
         </div>

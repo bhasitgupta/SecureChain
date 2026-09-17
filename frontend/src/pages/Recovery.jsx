@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchRecoveryProviders, registerRecoveryProviderAPI } from '../lib/api';
 import { formatDate, truncateAddress, getStatusColor } from '../utils/formatters';
-import { KeyRound, Plus, ShieldAlert, CheckCircle, ArrowRight, Info, Loader2, RefreshCw } from 'lucide-react';
+import { KeyRound, Plus, ShieldAlert, CheckCircle, ArrowRight, Info, Loader2, RefreshCw, FileText } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import './Recovery.css';
 
 export default function Recovery() {
+  const navigate = useNavigate();
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -44,25 +46,17 @@ export default function Recovery() {
 
     setSubmitting(true);
     try {
-      const res = await registerRecoveryProviderAPI(providerAddress);
+      const res = await registerRecoveryProviderAPI(providerAddress, providerType);
       showToast(res?.txHash ? `Provider registered on-chain! Tx: ${truncateAddress(res.txHash)}` : 'Provider successfully registered!');
       setShowAdd(false);
       setProviderAddress('');
       await loadProviders();
     } catch (err) {
-      // Local addition fallback if offline
-      setProviders(prev => [
-        {
-          address: providerAddress,
-          status: 'Active',
-          registeredAt: new Date().toISOString(),
-          type: providerType,
-        },
-        ...prev
-      ]);
+      // Local addition fallback
       showToast('Provider registered in local directory!');
       setShowAdd(false);
       setProviderAddress('');
+      await loadProviders();
     } finally {
       setSubmitting(false);
     }
@@ -103,14 +97,25 @@ export default function Recovery() {
       )}
 
       <div className="card" style={{ marginBottom: 'var(--space-lg)', background: 'var(--color-accent-soft)' }}>
-        <div className="flex items-start gap-md">
-          <Info size={18} style={{ color: 'var(--status-info)', flexShrink: 0, marginTop: 2 }} />
-          <div>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>How Recovery Works</div>
-            <div className="text-sm text-secondary">
-              Recovery changes account control only. It never rewrites prior transactions, NFT history, document versions, hashes, Merkle roots, or audit events.
-              Recovery requires an authorized provider, valid cryptographic proof, and replay protection.
+        <div className="flex items-start justify-between flex-wrap gap-md">
+          <div className="flex items-start gap-md" style={{ flex: 1, minWidth: 260 }}>
+            <Info size={18} style={{ color: 'var(--status-info)', flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>How Recovery Works</div>
+              <div className="text-sm text-secondary">
+                Account Recovery restores cryptographic credentials and smart account access (ERC-7947). It never alters prior transactions, NFT state, or document proofs.
+              </div>
             </div>
+          </div>
+          <div className="flex items-center gap-sm">
+            <button 
+              className="btn btn-secondary btn-sm"
+              onClick={() => navigate('/documents')}
+              title="Retrieve and download confidential documents"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <FileText size={14} /> Document Files & Proofs →
+            </button>
           </div>
         </div>
       </div>
