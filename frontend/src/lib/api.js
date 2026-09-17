@@ -259,7 +259,21 @@ export function initRealtimeLiveSync() {
 
     try {
       const cloudEvents = await fetchAuditEventsFromCloud();
-      if (Array.isArray(cloudEvents)) {
+      if (Array.isArray(cloudEvents) && cloudEvents.length > 0) {
+        // Persist cloud events to localStorage for offline resilience
+        try {
+          const rawLocal = localStorage.getItem('sc_audit_events');
+          const localEvts = rawLocal ? JSON.parse(rawLocal) : [];
+          const mergedMap = new Map();
+          for (const e of localEvts) if (e?.tx_hash) mergedMap.set(e.id || e.tx_hash, e);
+          for (const e of cloudEvents) if (e?.tx_hash && e.tx_hash.length === 66 && e.tx_hash.startsWith('0x')) {
+            mergedMap.set(e.id || e.tx_hash, e);
+          }
+          const merged = Array.from(mergedMap.values());
+          merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          localStorage.setItem('sc_audit_events', JSON.stringify(merged.slice(0, 200)));
+        } catch {}
+
         if (lastAuditCount !== -1 && cloudEvents.length !== lastAuditCount) {
           window.dispatchEvent(new CustomEvent('sc_audit_updated', { detail: { count: cloudEvents.length } }));
           window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { source: 'cloud' } }));
@@ -1243,13 +1257,24 @@ export async function fetchAssets() {
     const p = new ethers.JsonRpcProvider('https://polygon-amoy-bor-rpc.publicnode.com');
     const nft = new ethers.Contract(nftAddr, NFT_ABI, p);
 
-    // Collect all candidate IDs from cloud audit, cache, and probe up to 12 in parallel
-    const candidateIds = new Set([1, 2, 3, 4]);
+    // Collect all candidate IDs from cloud audit, cache, and probe with a generous lookahead
+    const candidateIds = new Set();
     for (const c of cached) if (c.tokenId) candidateIds.add(Number(c.tokenId));
     for (const e of cloudAudit) if (e.decoded?.tokenId) candidateIds.add(Number(e.decoded.tokenId));
-    const maxCandidate = Math.max(...Array.from(candidateIds), 4);
+    // Also probe local sc_audit_events for any newly minted token IDs
+    try {
+      const localRaw = localStorage.getItem('sc_audit_events');
+      if (localRaw) {
+        const localEvts = JSON.parse(localRaw);
+        for (const e of localEvts) if (e?.decoded?.tokenId) candidateIds.add(Number(e.decoded.tokenId));
+      }
+    } catch {}
+    // Always probe at least 1–6 so fresh-install users still see the on-chain tokens
+    for (let i = 1; i <= 6; i++) candidateIds.add(i);
+    const maxCandidate = Math.max(...Array.from(candidateIds), 6);
+    // Probe every integer from 1 up to max+8 — catches any token freshly minted since last sync
     const probeIds = [];
-    for (let i = 1; i <= maxCandidate + 4; i++) probeIds.push(i);
+    for (let i = 1; i <= maxCandidate + 8; i++) probeIds.push(i);
 
     // Parallel multi-call with 4.5-second hard timeout
     const results = await Promise.race([

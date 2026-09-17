@@ -2,13 +2,13 @@
   --accent-color: #FF0000;
   --text-color: #5C7175;
   --marker-color: #BBD5DA;
-  --marker-length: 18px;
-  --marker-gap: 6px;
+  --marker-length: 20px;
+  --marker-gap: 7px;
   --tick-scale: 0.5;
   --max-shift: 4px;
-  --item-gap: 13px;
-  --font-size: 0.78rem;
-  --smoothing: 80ms;
+  --item-gap: 18px;
+  --font-size: 0.88rem;
+  --smoothing: 75ms;
 
   position: relative;
   display: flex;
@@ -61,16 +61,16 @@
   align-items: center;
   width: 100%;
   box-sizing: border-box;
-  padding-right: 6px;
+  padding-right: 8px;
   overflow: hidden;
   font-size: var(--font-size);
   line-height: 1.25;
   font-weight: 500;
   color: color-mix(in srgb, var(--accent-color) calc(var(--effect, 0) * 100%), var(--text-color));
-  transform: none;
+  transform: translate3d(calc(var(--effect, 0) * var(--max-shift)), 0, 0);
   text-transform: uppercase;
-  letter-spacing: 0.018em;
-  will-change: color;
+  letter-spacing: 0.03em;
+  will-change: transform, color;
 }
 
 .line-sidebar__item[aria-current='true'] .line-sidebar__label {
@@ -80,10 +80,10 @@
 
 .line-sidebar__index {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  margin-right: 0.5rem;
-  font-size: 0.78em;
+  margin-right: 0.65rem;
+  font-size: 0.82em;
   opacity: calc(0.55 + var(--effect, 0) * 0.45);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   flex-shrink: 0;
 }
 

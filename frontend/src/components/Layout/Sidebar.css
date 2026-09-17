@@ -160,10 +160,9 @@
   padding-left: 14px;
 }
 
-/* ── Left Panel Lower Telemetry Card ── */
 .sidebar-telemetry-card {
-  margin-top: 24px;
-  margin-bottom: 12px;
+  margin-top: auto;
+  margin-bottom: 8px;
   padding: 12px 14px;
   background: rgba(187, 213, 218, 0.12);
   border: 1px solid rgba(187, 213, 218, 0.4);
