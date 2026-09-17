@@ -51,7 +51,6 @@ export default function RBAC() {
   const [newRole, setNewRole] = useState('USER');
   const [toast, setToast] = useState(null);
   const [syncing, setSyncing] = useState(false);
-  const [onChainBroadcast, setOnChainBroadcast] = useState(false);
 
   const loadData = async () => {
     try {
@@ -180,59 +179,76 @@ export default function RBAC() {
       return;
     }
 
-    showNotification(`Assigning ${newRole} to ${truncateAddress(target)}...`);
+    if (!window.ethereum) {
+      showNotification('Web3 wallet (MetaMask) required for on-chain role assignment. Please install or connect MetaMask.', null, true);
+      return;
+    }
+
+    showNotification(`Requesting MetaMask confirmation for on-chain ${newRole} role...`);
     let txHash = null;
 
-    // Direct On-Chain MetaMask broadcast only if user explicitly enabled it
-    if (onChainBroadcast && window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const signerAddr = (await signer.getAddress()).toLowerCase();
-        const iamAbi = [
-          'function hasRole(bytes32 role, address acct) view returns (bool)',
-          'function grantRole(bytes32 role, address acct) external',
-          'function revokeRole(bytes32 role, address acct) external'
-        ];
-        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
-        const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send('eth_requestAccounts', []);
+      const signer = await provider.getSigner();
+      const signerAddr = (await signer.getAddress()).toLowerCase();
+      const iamAbi = [
+        'function hasRole(bytes32 role, address acct) view returns (bool)',
+        'function grantRole(bytes32 role, address acct) external',
+        'function revokeRole(bytes32 role, address acct) external'
+      ];
+      const iam = new ethers.Contract(iamAddr, iamAbi, signer);
 
-        if (callerIsAdmin) {
-          if (previousRole && previousRole !== newRole && previousRole !== 'USER') {
-            const oldHash = ROLE_HASHES[previousRole];
-            if (oldHash) {
-              const hasOld = await iam.hasRole(oldHash, target).catch(() => false);
-              if (hasOld) {
-                const estRev = await iam.revokeRole.estimateGas(oldHash, target).catch(() => 100000n);
-                const revTx = await iam.revokeRole(oldHash, target, { gasLimit: (estRev * 130n) / 100n });
-                await revTx.wait(1);
-              }
-            }
-          }
-
-          const roleHash = ROLE_HASHES[newRole];
-          if (roleHash) {
-            const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
-            if (!alreadyHas) {
-              const estGrant = await iam.grantRole.estimateGas(roleHash, target).catch(() => 100000n);
-              const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGrant * 130n) / 100n });
-              showNotification(`MetaMask tx submitted: ${truncateAddress(tx.hash)}. Confirming on Polygon Amoy...`);
-              await tx.wait(1);
-              txHash = tx.hash;
-            }
-          }
-        } else {
-          showNotification('Connected wallet lacks contract ADMIN_ROLE on Amoy. Assigning via Sovereign Cloud Governance.');
-        }
-      } catch (chainErr) {
-        console.warn('Direct on-chain grant note:', chainErr.message);
+      const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
+      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+        return;
       }
+
+      // If target held a different privileged role on-chain, revoke it first
+      const allRoles = ['ADMIN', 'MANAGER', 'AUDITOR'];
+      for (const r of allRoles) {
+        if (r !== newRole) {
+          const rHash = ROLE_HASHES[r];
+          const hasOld = await iam.hasRole(rHash, target).catch(() => false);
+          if (hasOld) {
+            showNotification(`Revoking previous ${r} role on Polygon Amoy... Confirm in wallet.`);
+            const estRev = await iam.revokeRole.estimateGas(rHash, target).catch(() => 120000n);
+            const revTx = await iam.revokeRole(rHash, target, { gasLimit: (estRev * 130n) / 100n });
+            showNotification(`Revoke submitted: ${truncateAddress(revTx.hash)}. Mining...`);
+            await revTx.wait(1);
+          }
+        }
+      }
+
+      const roleHash = ROLE_HASHES[newRole];
+      const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
+
+      if (!alreadyHas) {
+        showNotification(`Granting ${newRole} on-chain... Confirm gas fee in MetaMask.`);
+        const estGrant = await iam.grantRole.estimateGas(roleHash, target).catch(() => 120000n);
+        const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGrant * 130n) / 100n });
+        showNotification(`MetaMask tx submitted: ${truncateAddress(tx.hash)}. Confirming on Polygon Amoy...`);
+        await tx.wait(1);
+        txHash = tx.hash;
+      } else {
+        showNotification(`Wallet already has ${newRole} role on Polygon Amoy contract.`);
+      }
+    } catch (err) {
+      console.error('On-chain role assignment error:', err);
+      const isUserReject = err?.code === 4001 || err?.message?.includes('user rejected') || err?.message?.includes('User denied');
+      if (isUserReject) {
+        showNotification('Role assignment cancelled by user in wallet.', null, true);
+      } else {
+        showNotification(`On-chain transaction failed: ${err?.reason || err?.message || 'Reverted'}`, null, true);
+      }
+      return;
     }
 
     // Persist locally, sync to Cloud S3 Registry and Gateway DB
     await setWalletRole(target, newRole);
     setWalletRoles(prev => ({ ...prev, [target]: newRole }));
-    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: Boolean(txHash) } }));
+    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: true } }));
 
     // Record verified audit trail entry
     try {
@@ -246,7 +262,7 @@ export default function RBAC() {
           account: target,
           role: newRole,
           authority: currentWallet || 'PRIMARY_ADMIN',
-          mode: txHash ? 'ON_CHAIN' : 'CACHE_ONLY'
+          mode: 'ON_CHAIN'
         },
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -259,7 +275,7 @@ export default function RBAC() {
       switchRole(newRole);
     }
 
-    showNotification(`Granted ${newRole} to ${truncateAddress(target)}!`, txHash);
+    showNotification(`Granted ${newRole} on-chain to ${truncateAddress(target)}!`, txHash);
     setNewAddress('');
   };
 
@@ -272,57 +288,74 @@ export default function RBAC() {
       return;
     }
 
-    showNotification(`Updating role to ${role}...`);
+    if (!window.ethereum) {
+      showNotification('Web3 wallet (MetaMask) required for on-chain role modification.', null, true);
+      return;
+    }
+
+    showNotification(`Requesting MetaMask confirmation to update role to ${role}...`);
     let txHash = null;
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
-    if (onChainBroadcast && window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const signerAddr = (await signer.getAddress()).toLowerCase();
-        const iamAbi = [
-          'function hasRole(bytes32 role, address acct) view returns (bool)',
-          'function grantRole(bytes32 role, address acct) external',
-          'function revokeRole(bytes32 role, address acct) external'
-        ];
-        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
-        const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send('eth_requestAccounts', []);
+      const signer = await provider.getSigner();
+      const signerAddr = (await signer.getAddress()).toLowerCase();
+      const iamAbi = [
+        'function hasRole(bytes32 role, address acct) view returns (bool)',
+        'function grantRole(bytes32 role, address acct) external',
+        'function revokeRole(bytes32 role, address acct) external'
+      ];
+      const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+      const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
 
-        if (callerIsAdmin) {
-          if (previousRole && previousRole !== role && previousRole !== 'USER') {
-            const oldHash = ROLE_HASHES[previousRole];
-            if (oldHash) {
-              const hasOld = await iam.hasRole(oldHash, target).catch(() => false);
-              if (hasOld) {
-                const estRev = await iam.revokeRole.estimateGas(oldHash, target).catch(() => 100000n);
-                const revTx = await iam.revokeRole(oldHash, target, { gasLimit: (estRev * 130n) / 100n });
-                await revTx.wait(1);
-              }
-            }
-          }
-
-          const roleHash = ROLE_HASHES[role];
-          if (roleHash) {
-            const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
-            if (!alreadyHas) {
-              const estGrant = await iam.grantRole.estimateGas(roleHash, target).catch(() => 100000n);
-              const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGrant * 130n) / 100n });
-              await tx.wait(1);
-              txHash = tx.hash;
-            }
-          }
-        } else {
-          showNotification('Connected wallet lacks contract ADMIN_ROLE on Amoy. Updating in local cache.');
-        }
-      } catch (chainErr) {
-        console.warn('On-chain role change note:', chainErr.message);
+      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+        return;
       }
+
+      // Revoke any previous privileged role held on-chain
+      const allRoles = ['ADMIN', 'MANAGER', 'AUDITOR'];
+      for (const r of allRoles) {
+        if (r !== role) {
+          const rHash = ROLE_HASHES[r];
+          const hasOld = await iam.hasRole(rHash, target).catch(() => false);
+          if (hasOld) {
+            showNotification(`Revoking previous ${r} on Polygon Amoy... Confirm in wallet.`);
+            const estRev = await iam.revokeRole.estimateGas(rHash, target).catch(() => 120000n);
+            const revTx = await iam.revokeRole(rHash, target, { gasLimit: (estRev * 130n) / 100n });
+            await revTx.wait(1);
+          }
+        }
+      }
+
+      const roleHash = ROLE_HASHES[role];
+      if (roleHash) {
+        const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
+        if (!alreadyHas) {
+          showNotification(`Granting ${role} on-chain... Confirm gas fee in MetaMask.`);
+          const estGrant = await iam.grantRole.estimateGas(roleHash, target).catch(() => 120000n);
+          const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGrant * 130n) / 100n });
+          showNotification(`Transaction submitted: ${truncateAddress(tx.hash)}. Mining...`);
+          await tx.wait(1);
+          txHash = tx.hash;
+        }
+      }
+    } catch (err) {
+      console.error('On-chain role change error:', err);
+      const isUserReject = err?.code === 4001 || err?.message?.includes('user rejected') || err?.message?.includes('User denied');
+      if (isUserReject) {
+        showNotification('Role change cancelled by user in wallet.', null, true);
+      } else {
+        showNotification(`On-chain transaction failed: ${err?.reason || err?.message || 'Reverted'}`, null, true);
+      }
+      return;
     }
 
     await setWalletRole(target, role);
     setWalletRoles(prev => ({ ...prev, [target]: role }));
-    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: Boolean(txHash) } }));
+    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: true } }));
 
     // Record verified audit trail entry
     try {
@@ -337,7 +370,7 @@ export default function RBAC() {
           role,
           previousRole: previousRole || 'NONE',
           authority: currentWallet || 'PRIMARY_ADMIN',
-          mode: txHash ? 'ON_CHAIN' : 'CACHE_ONLY'
+          mode: 'ON_CHAIN'
         },
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -350,27 +383,11 @@ export default function RBAC() {
       switchRole(role);
     }
 
-    showNotification(`Updated ${truncateAddress(target)} to ${role}.`, txHash);
+    showNotification(`Updated ${truncateAddress(target)} to ${role} on-chain!`, txHash);
   };
 
   const handleRevokeRole = async (address, role) => {
     const target = address.toLowerCase().trim();
-    showNotification(`Revoking ${role} from ${truncateAddress(target)}...`);
-    let txHash = null;
-
-    // 1. Immediately remove from local state for instant, snappy UI update
-    setWalletRoles(prev => {
-      const next = { ...prev };
-      delete next[target];
-      delete next['0x0ca09ba889727be9fbbaa53d2fe1541bf2f8cee6'];
-      return next;
-    });
-    setConfirmedRoles(prev => {
-      const next = { ...prev };
-      delete next[target];
-      return next;
-    });
-
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
     // If target is smart contract address, purge immediately
@@ -381,37 +398,63 @@ export default function RBAC() {
       return;
     }
 
-    const roleHash = ROLE_HASHES[role];
+    if (!window.ethereum) {
+      showNotification('Web3 wallet (MetaMask) required for on-chain revocation.', null, true);
+      return;
+    }
 
-    // 2. Safe On-Chain Revoke only if onChainBroadcast is requested and wallet holds ADMIN_ROLE
-    if (onChainBroadcast && window.ethereum && roleHash && role !== 'USER' && (currentRole === 'ADMIN' || isConnected)) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const signerAddr = (await signer.getAddress()).toLowerCase();
-        const iamAbi = [
-          'function hasRole(bytes32 role, address acct) view returns (bool)',
-          'function revokeRole(bytes32 role, address acct) external'
-        ];
-        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+    showNotification(`Requesting MetaMask confirmation to revoke ${role} from ${truncateAddress(target)}...`);
+    let txHash = null;
 
-        const heldOnChain = await iam.hasRole(roleHash, target).catch(() => false);
-        const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send('eth_requestAccounts', []);
+      const signer = await provider.getSigner();
+      const signerAddr = (await signer.getAddress()).toLowerCase();
+      const iamAbi = [
+        'function hasRole(bytes32 role, address acct) view returns (bool)',
+        'function revokeRole(bytes32 role, address acct) external'
+      ];
+      const iam = new ethers.Contract(iamAddr, iamAbi, signer);
 
-        if (callerIsAdmin && heldOnChain) {
-          const estGas = await iam.revokeRole.estimateGas(roleHash, target).catch(() => 100000n);
-          const gasLimit = (estGas * 130n) / 100n;
-          const tx = await iam.revokeRole(roleHash, target, { gasLimit });
+      const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
+      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+        return;
+      }
+
+      // Check all roles held on-chain by target
+      const allRoles = ['ADMIN', 'MANAGER', 'AUDITOR'];
+      let revokedAny = false;
+      for (const r of allRoles) {
+        const rHash = ROLE_HASHES[r];
+        const isHeld = await iam.hasRole(rHash, target).catch(() => false);
+        if (isHeld) {
+          showNotification(`Revoking ${r} on Polygon Amoy... Confirm gas fee in MetaMask.`);
+          const estGas = await iam.revokeRole.estimateGas(rHash, target).catch(() => 120000n);
+          const tx = await iam.revokeRole(rHash, target, { gasLimit: (estGas * 130n) / 100n });
           showNotification(`Revoke submitted: ${truncateAddress(tx.hash)}. Confirming on Polygon Amoy...`);
           await tx.wait(1);
           txHash = tx.hash;
+          revokedAny = true;
         }
-      } catch (chainErr) {
-        console.warn('On-chain revoke note:', chainErr.message);
       }
+
+      if (!revokedAny) {
+        showNotification(`Wallet ${truncateAddress(target)} has no active on-chain role. Removed from directory.`);
+      }
+    } catch (err) {
+      console.error('On-chain revoke error:', err);
+      const isUserReject = err?.code === 4001 || err?.message?.includes('user rejected') || err?.message?.includes('User denied');
+      if (isUserReject) {
+        showNotification('Revocation cancelled by user in wallet.', null, true);
+      } else {
+        showNotification(`On-chain revoke failed: ${err?.reason || err?.message || 'Reverted'}`, null, true);
+      }
+      return;
     }
 
-    // 3. Purge from local registry and cloud database
+    // Purge from local registry and cloud database (S3)
     await removeWalletRole(target);
 
     // Record audit trail event
@@ -426,7 +469,7 @@ export default function RBAC() {
           account: target,
           role,
           authority: currentWallet || 'PRIMARY_ADMIN',
-          mode: txHash ? 'ON_CHAIN' : 'SOVEREIGN_CLOUD'
+          mode: 'ON_CHAIN'
         },
         timestamp: new Date().toISOString(),
         created_at: new Date().toISOString(),
@@ -439,46 +482,63 @@ export default function RBAC() {
       switchRole('USER');
     }
 
-    showNotification(`Revoked ${role} from ${truncateAddress(target)}. Directory updated.`, txHash);
+    showNotification(`Revoked ${role} from ${truncateAddress(target)} on-chain. Directory updated.`, txHash);
   };
 
   const handleApprove = async (reqId, address, role) => {
     const target = address.toLowerCase().trim();
-    showNotification(`Approving and granting ${role}...`);
+    if (!window.ethereum) {
+      showNotification('Web3 wallet (MetaMask) required for on-chain role approval.', null, true);
+      return;
+    }
+
+    showNotification(`Approving and granting ${role} on-chain... Confirm in wallet.`);
     let txHash = null;
     const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
-    if (onChainBroadcast && window.ethereum && (currentRole === 'ADMIN' || isConnected)) {
-      try {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const signer = await provider.getSigner();
-        const signerAddr = (await signer.getAddress()).toLowerCase();
-        const iamAbi = [
-          'function hasRole(bytes32 role, address acct) view returns (bool)',
-          'function grantRole(bytes32 role, address acct) external'
-        ];
-        const iam = new ethers.Contract(iamAddr, iamAbi, signer);
-        const roleHash = ROLE_HASHES[role];
-        const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      await provider.send('eth_requestAccounts', []);
+      const signer = await provider.getSigner();
+      const signerAddr = (await signer.getAddress()).toLowerCase();
+      const iamAbi = [
+        'function hasRole(bytes32 role, address acct) view returns (bool)',
+        'function grantRole(bytes32 role, address acct) external'
+      ];
+      const iam = new ethers.Contract(iamAddr, iamAbi, signer);
+      const roleHash = ROLE_HASHES[role];
+      const callerIsAdmin = await iam.hasRole(ROLE_HASHES.ADMIN, signerAddr).catch(() => false);
 
-        if (callerIsAdmin && roleHash) {
-          const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
-          if (!alreadyHas) {
-            const estGas = await iam.grantRole.estimateGas(roleHash, target).catch(() => 100000n);
-            const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGas * 130n) / 100n });
-            await tx.wait(1);
-            txHash = tx.hash;
-          }
-        }
-      } catch (chainErr) {
-        console.warn('Approve on-chain note:', chainErr);
+      if (!callerIsAdmin && signerAddr !== PRIMARY_ADMIN_ADDRESS.toLowerCase()) {
+        showNotification('Connected wallet lacks contract ADMIN_ROLE on Polygon Amoy.', null, true);
+        return;
       }
+
+      if (roleHash) {
+        const alreadyHas = await iam.hasRole(roleHash, target).catch(() => false);
+        if (!alreadyHas) {
+          const estGas = await iam.grantRole.estimateGas(roleHash, target).catch(() => 120000n);
+          const tx = await iam.grantRole(roleHash, target, { gasLimit: (estGas * 130n) / 100n });
+          showNotification(`Approval tx submitted: ${truncateAddress(tx.hash)}. Mining...`);
+          await tx.wait(1);
+          txHash = tx.hash;
+        }
+      }
+    } catch (err) {
+      console.error('Approve on-chain error:', err);
+      const isUserReject = err?.code === 4001 || err?.message?.includes('user rejected') || err?.message?.includes('User denied');
+      if (isUserReject) {
+        showNotification('Approval cancelled by user in wallet.', null, true);
+      } else {
+        showNotification(`Approval failed on-chain: ${err?.reason || err?.message || 'Reverted'}`, null, true);
+      }
+      return;
     }
 
     approveRoleRequest(reqId);
     await setWalletRole(target, role);
     setWalletRoles(prev => ({ ...prev, [target]: role }));
-    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: Boolean(txHash) } }));
+    setConfirmedRoles(prev => ({ ...prev, [target]: { isContract: true } }));
     setRequests(prev => prev.filter(r => r.id !== reqId));
     await loadData();
 
@@ -486,7 +546,7 @@ export default function RBAC() {
       switchRole(role);
     }
 
-    showNotification(`Approved and granted ${role} for ${truncateAddress(target)}`, txHash);
+    showNotification(`Approved and granted ${role} on-chain for ${truncateAddress(target)}`, txHash);
   };
 
   const handleDecline = (reqId, address) => {
@@ -638,22 +698,14 @@ export default function RBAC() {
             <UserPlus size={18} style={{ color: 'var(--color-action)' }} />
             <h3 style={{ margin: 0 }}>Assign Role by Wallet Address</h3>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--color-bg-subtle, rgba(0,0,0,0.03))', padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(0,0,0,0.08)' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Mode: <strong style={{ color: onChainBroadcast ? '#10B981' : 'var(--color-action)' }}>{onChainBroadcast ? 'Direct MetaMask On-Chain' : 'Sovereign Fast-Sync (Gasless)'}</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.08)', padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, color: '#10B981' }}>
+              <CheckCircle2 size={14} /> 100% On-Chain Mode (Polygon Amoy)
             </span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
-              <input 
-                type="checkbox" 
-                checked={onChainBroadcast} 
-                onChange={e => setOnChainBroadcast(e.target.checked)} 
-              />
-              <span>Direct MetaMask</span>
-            </label>
           </div>
         </div>
         <p className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
-          Directly grant or modify a wallet's permissions. Roles are saved on-chain or in local registry.
+          Every role assignment, modification, and revocation opens your wallet for on-chain confirmation and executes directly on the Polygon Amoy smart contract.
         </p>
 
         <form onSubmit={handleAssignRole} className="flex gap-md" style={{ flexWrap: 'wrap' }}>

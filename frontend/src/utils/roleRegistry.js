@@ -377,6 +377,7 @@ export function getAllWalletRoles() {
 export async function setWalletRole(address, role) {
   if (!address) return;
   const normalized = address.toLowerCase().trim();
+  onChainRoleCache.delete(normalized);
   const currentRoles = getStoredRoles();
   const revoked = getRevokedRoles();
 
@@ -411,6 +412,7 @@ export async function setWalletRole(address, role) {
 export async function removeWalletRole(address) {
   if (!address) return;
   const normalized = address.toLowerCase().trim();
+  onChainRoleCache.delete(normalized);
   const currentRoles = getStoredRoles();
   const iamAddr = (CONTRACT_ADDRESSES.IdentityAndAccessManager || '').toLowerCase();
 
