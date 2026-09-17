@@ -303,11 +303,17 @@ export function getCachedAssets() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Ensure thumbnails are fresh
-        return parsed.map(a => ({
-          ...a,
-          thumbnailUrl: resolveThumbnail(a.tokenId, a.description, a.assetClass),
-        }));
+        // Ensure thumbnails are fresh and clean parsed names are returned (never raw base64 URI)
+        return parsed.map(a => {
+          const rawUri = a.rawMetadataURI || a.description || '';
+          const meta = parseMetadataURI(rawUri);
+          const cleanTitle = meta.name || (rawUri && !rawUri.startsWith('data:') ? rawUri : `Asset #${a.tokenId}`);
+          return {
+            ...a,
+            description: cleanTitle,
+            thumbnailUrl: a.thumbnailUrl || resolveThumbnail(a.tokenId, rawUri, a.assetClass),
+          };
+        });
       }
     }
   } catch {}
@@ -322,11 +328,11 @@ export function saveCachedAssets(assets) {
 }
 
 export function buildErc721MetadataURI({ name, description, assetClass, imageUrl }) {
-  // Never pass raw large base64 data URIs into on-chain calldata/storage.
-  // EVM floor data gas (EIP-7623) and storage limits will reject the transaction.
+  // Allow compact on-chain images (up to 12KB) so Polygonscan, OpenSea, and wallets display the image!
+  // Only strip if oversized (>12KB) to prevent EVM calldata floor gas errors.
   let onChainImage = imageUrl || '';
-  if (typeof onChainImage === 'string' && onChainImage.startsWith('data:') && onChainImage.length > 2048) {
-    onChainImage = ''; // Stored in local/decentralized cache instead of clogging on-chain calldata
+  if (typeof onChainImage === 'string' && onChainImage.startsWith('data:') && onChainImage.length > 12000) {
+    onChainImage = '';
   }
 
   const metadata = {
@@ -353,24 +359,24 @@ export function buildErc721MetadataURI({ name, description, assetClass, imageUrl
 }
 
 export function parseMetadataURI(rawUri) {
-  if (!rawUri || typeof rawUri !== 'string') return { name: null, image: null };
+  if (!rawUri || typeof rawUri !== 'string') return { name: null, image: null, description: null };
   const str = rawUri.trim();
-  if (str.startsWith('data:application/json;base64,')) {
+  if (str.startsWith('data:application/json;base64,') || str.startsWith('data:application/json;base64;')) {
     try {
       const b64 = str.split(',')[1];
       const json = decodeURIComponent(escape(atob(b64)));
       const parsed = JSON.parse(json);
-      return { name: parsed.name, image: parsed.image };
+      return { name: parsed.name || null, image: parsed.image || null, description: parsed.description || null };
     } catch {}
   }
   if (str.startsWith('data:application/json;utf8,') || str.startsWith('{')) {
     try {
       const json = str.startsWith('{') ? str : str.replace('data:application/json;utf8,', '');
       const parsed = JSON.parse(json);
-      return { name: parsed.name, image: parsed.image };
+      return { name: parsed.name || null, image: parsed.image || null, description: parsed.description || null };
     } catch {}
   }
-  return { name: null, image: null };
+  return { name: null, image: null, description: null };
 }
 
 export function resolveThumbnail(tokenId, metadataURI, assetClass) {
@@ -471,13 +477,14 @@ export async function fetchAssets() {
           const owner = await nft.ownerOf(id);
           const rec = await nft.getAsset(id);
           const tokenId = String(id);
-          seenIds.add(tokenId);
-
+          const parsedMeta = parseMetadataURI(rec.metadataURI);
+          const cleanTitle = parsedMeta.name || (rec.metadataURI && !rec.metadataURI.startsWith('data:') ? rec.metadataURI : `Asset #${tokenId}`);
           const thumb = resolveThumbnail(tokenId, rec.metadataURI, rec.assetClass);
 
           onChainAssets.push({
             tokenId,
-            description: rec.metadataURI || `Asset #${tokenId}`,
+            description: cleanTitle,
+            rawMetadataURI: rec.metadataURI,
             assetClass: rec.assetClass || 'Enterprise Asset',
             assetStatus: Number(rec.status) === 1 ? 'Active' : Number(rec.status) === 2 ? 'Transferred' : 'Retired',
             ownerName: owner.toLowerCase(),
@@ -677,15 +684,28 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
       const nftAddr = CONTRACT_ADDRESSES.EnterpriseAssetNFT || '0xE97E0ea3a452a5099fd126721Db0DAfa96455e7D';
       const nft = new ethers.Contract(nftAddr, NFT_ABI, signer);
 
-      // STEP 4: Parallelize thumbnail upload + metadata prep
-      // File is already compressed by handleFileSelection, so NO re-compression
-      let minioImageUrl = imageUrl || '';
+      // STEP 4: Parallelize thumbnail upload + on-chain metadata prep
+      let onChainImageUrl = '';
+
+      // If a file was selected, generate a compact on-chain micro-thumbnail (160px @ 0.65 quality ~3.5KB).
+      // This is small enough to embed directly on-chain so Polygonscan, OpenSea, and wallets display it!
+      if (file) {
+        try {
+          const micro = await compressImage(file, 160, 0.65);
+          if (micro && micro.dataUrl && micro.dataUrl.length <= 12000) {
+            onChainImageUrl = micro.dataUrl;
+          }
+        } catch {}
+      } else if (imageUrl && typeof imageUrl === 'string' && imageUrl.length <= 12000) {
+        onChainImageUrl = imageUrl;
+      }
+
       const thumbnailUploadPromise = (file) ? (async () => {
         try {
           const thumbForm = new FormData();
           thumbForm.append('thumbnail', file);
           const controller = new AbortController();
-          const tid = setTimeout(() => controller.abort(), 5000);
+          const tid = setTimeout(() => controller.abort(), 4000);
           const thumbRes = await fetch(`${API_BASE}/assets/upload-thumbnail`, {
             method: 'POST',
             body: thumbForm,
@@ -706,9 +726,9 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
 
       if (onProgress) onProgress('Preparing metadata...');
 
-      // Wait for thumbnail (runs in parallel with everything above)
+      // If cloud storage responded with public URL, prioritize it
       const uploadedUrl = await thumbnailUploadPromise;
-      if (uploadedUrl) minioImageUrl = uploadedUrl;
+      if (uploadedUrl) onChainImageUrl = uploadedUrl;
 
       let finalMetadataURI = metadataURI;
       if (!finalMetadataURI || (!finalMetadataURI.startsWith('data:application/json') && !finalMetadataURI.startsWith('http://') && !finalMetadataURI.startsWith('https://') && !finalMetadataURI.startsWith('ipfs://'))) {
@@ -716,7 +736,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
           name: metadataURI || 'Enterprise Digital Asset',
           description: `${assetClass || 'Defence Equipment'} enterprise asset secured on Polygon Amoy by SecureChain`,
           assetClass: assetClass || 'Defence Equipment',
-          imageUrl: minioImageUrl,
+          imageUrl: onChainImageUrl,
         });
       }
 

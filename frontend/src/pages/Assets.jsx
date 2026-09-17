@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, getStatusColor } from '../utils/formatters';
-import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, compressImage } from '../lib/api';
+import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, compressImage, saveAssetThumbnail, parseMetadataURI } from '../lib/api';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, RefreshCw, ImageOff } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
@@ -349,27 +349,52 @@ export default function Assets() {
                     </div>
                   </div>
                 ) : (
-                  <div 
+                  <label 
                     style={{ 
-                      height: 120, 
+                      height: 130, 
                       marginBottom: 'var(--space-md)', 
                       borderRadius: 8, 
-                      background: '#0F172A', 
+                      background: 'radial-gradient(ellipse at center, rgba(14, 165, 233, 0.08) 0%, #0F172A 100%)', 
                       display: 'flex', 
-                      flexDirection: 'column',
+                      flexDirection: 'column', 
                       alignItems: 'center', 
                       justifyContent: 'center', 
-                      color: '#475569',
-                      border: '1px dashed #334155',
-                      gap: 6
+                      color: '#64748B', 
+                      border: '1px dashed #334155', 
+                      gap: 6,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
                     }}
+                    title="Click to attach thumbnail image to this asset"
                   >
-                    <Gem size={32} style={{ opacity: 0.35 }} />
-                    <span className="text-xs font-mono" style={{ color: '#64748B' }}>No On-Chain Image</span>
-                  </div>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      style={{ display: 'none' }} 
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const comp = await compressImage(file, 480, 0.82);
+                            const url = comp?.dataUrl;
+                            if (url) {
+                              saveAssetThumbnail(asset.tokenId, url);
+                              loadAssetsData();
+                            }
+                          } catch {}
+                        }
+                      }}
+                    />
+                    <Gem size={28} style={{ color: '#0EA5E9', opacity: 0.65 }} />
+                    <span className="text-xs font-mono" style={{ color: '#94A3B8' }}>+ Attach Thumbnail</span>
+                  </label>
                 )}
 
-                <h4 style={{ marginBottom: 'var(--space-xs)' }}>{asset.description}</h4>
+                <h4 style={{ marginBottom: 'var(--space-xs)' }}>
+                  {asset.description?.startsWith('data:') 
+                    ? (parseMetadataURI(asset.description)?.name || `Asset #${asset.tokenId}`) 
+                    : (asset.description || `Asset #${asset.tokenId}`)}
+                </h4>
                 <div className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>{asset.assetClass}</div>
                 <div className="divider" />
                 
