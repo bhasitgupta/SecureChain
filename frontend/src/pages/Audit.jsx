@@ -31,7 +31,7 @@ export default function Audit() {
           id: e.id,
           event: e.event_name,
           actor: (e.decoded && (e.decoded.account || e.decoded.sender || e.decoded.admin)) || 'Contract Caller',
-          target: (e.decoded && (e.decoded.did || e.decoded.tokenId || e.decoded.target)) || e.contract_addr,
+          target: (e.decoded && (e.decoded.target || (e.decoded.tokenId ? `Token #${e.decoded.tokenId}` : null) || e.decoded.did)) || e.target || e.contract_addr,
           block: e.block_number,
           txHash: e.tx_hash,
           timestamp: e.created_at,
@@ -115,7 +115,7 @@ export default function Audit() {
                 <td className="text-sm font-mono">{typeof e.target === 'string' && e.target.length > 20 ? `${e.target.slice(0, 10)}...${e.target.slice(-6)}` : e.target}</td>
                 <td className="font-mono text-sm">{e.block}</td>
                 <td className="font-mono text-xs">
-                  {e.txHash && e.txHash.startsWith('0x') ? (
+                  {e.txHash && typeof e.txHash === 'string' && e.txHash.length === 66 && e.txHash.startsWith('0x') ? (
                     <a 
                       href={`https://amoy.polygonscan.com/tx/${e.txHash}`} 
                       target="_blank" 
@@ -124,7 +124,9 @@ export default function Audit() {
                     >
                       {e.txHash.slice(0, 10)}... <ExternalLink size={10} />
                     </a>
-                  ) : (e.txHash || 'Live')}
+                  ) : (
+                    <span className="text-secondary font-mono">{e.txHash ? `${e.txHash.slice(0, 10)}...` : 'Confirmed'}</span>
+                  )}
                 </td>
                 <td className="text-sm text-secondary">{formatDate(e.timestamp)}</td>
               </tr>
