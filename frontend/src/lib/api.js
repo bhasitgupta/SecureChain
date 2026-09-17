@@ -726,17 +726,11 @@ export async function uploadDocument(title, file, onProgress) {
   if (canAnchorOnChain) {
     if (onProgress) onProgress('Estimating Polygon Amoy gas fees...');
     const gasFees = await getAmoyGasOverrides(browserProvider);
+    // Direct gas limit prevents RPC estimateGas lag and ensures instant MetaMask popup
     let txOverrides = {
       ...gasFees,
       gasLimit: 350000n,
     };
-
-    try {
-      const est = await anchor.anchorBatch.estimateGas(batchId, merkleRoot, 1, { ...gasFees });
-      txOverrides.gasLimit = (est * 140n) / 100n;
-    } catch (estErr) {
-      console.warn('[anchorBatch] Gas estimation fallback:', estErr);
-    }
 
     if (onProgress) onProgress('Confirm document anchor in MetaMask popup...');
     let tx;
@@ -971,118 +965,124 @@ export async function uploadDocumentRevision(docId, file, onProgress) {
   const batchId = ethers.keccak256(ethers.toUtf8Bytes(versionId + '_' + Date.now()));
   const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes(sha256Hex));
 
-  let txHash = '0x3b13cf40a8310f80b271d5b306fc6e2a9b3d097ae7aa9177d80fd3dc7a6e17095';
-  let blockNumber = 17826350;
+  let txHash = null;
+  let blockNumber = null;
   const status = 'ANCHORED';
   const anchorAddr = CONTRACT_ADDRESSES.DocumentAnchorRegistry || '0x8921960116d0D4a8A26aad7eA330E3f098C7F58F';
 
-  // 3. Fast-Track & Crash-Proof Wallet Anchoring
-  if (typeof window !== 'undefined' && window.ethereum) {
+  // 3. Direct On-Chain Wallet Anchoring via MetaMask (Prompt, Gas Fee, Signature)
+  if (typeof window === 'undefined' || !window.ethereum) {
+    throw new Error('MetaMask or a Web3 wallet is required to sign and anchor document revisions on Polygon Amoy.');
+  }
+
+  // Fast check: switch only if not on Polygon Amoy
+  const currentChain = window.ethereum.chainId;
+  if (currentChain !== '0x13882' && currentChain !== 80002 && currentChain !== '80002') {
+    if (onProgress) onProgress('Switching wallet to Polygon Amoy Testnet...');
     try {
-      const currentChain = window.ethereum.chainId;
-      // Fast check: switch only if not on Polygon Amoy
-      if (currentChain !== '0x13882' && currentChain !== 80002 && currentChain !== '80002') {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x13882' }],
-          });
-        } catch (switchErr) {
-          if (switchErr.code === 4902) {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: '0x13882',
-                chainName: 'Polygon Amoy Testnet',
-                nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
-                rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://polygon-amoy.drpc.org'],
-                blockExplorerUrls: ['https://amoy.polygonscan.com'],
-              }],
-            });
-          }
-        }
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x13882' }],
+      });
+    } catch (switchErr) {
+      if (switchErr.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [{
+            chainId: '0x13882',
+            chainName: 'Polygon Amoy Testnet',
+            nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+            rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://polygon-amoy.drpc.org'],
+            blockExplorerUrls: ['https://amoy.polygonscan.com'],
+          }],
+        });
       }
-
-      // Fast account check (no duplicate account popups)
-      let accounts = [];
-      try {
-        accounts = await Promise.race([
-          window.ethereum.request({ method: 'eth_accounts' }),
-          new Promise(r => setTimeout(() => r([]), 400))
-        ]);
-        if (!accounts || accounts.length === 0) {
-          accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        }
-      } catch {}
-
-      if (accounts && accounts.length > 0) {
-        const signerAddr = accounts[0].toLowerCase();
-
-        // Check viability via direct publicnode RPC with strict 600ms timeout
-        // NEVER sends reverting calls or unresolvable RPC calls through MetaMask's in-page proxy!
-        let canAnchorDirectly = false;
-        try {
-          const directProvider = new ethers.JsonRpcProvider('https://polygon-amoy-bor-rpc.publicnode.com');
-          const bal = await Promise.race([
-            directProvider.getBalance(signerAddr),
-            new Promise(r => setTimeout(() => r(0n), 600))
-          ]);
-
-          if (bal > ethers.parseUnits('0.01', 'ether')) {
-            const testContract = new ethers.Contract(anchorAddr, ANCHOR_ABI, directProvider);
-            await Promise.race([
-              testContract.anchorBatch.staticCall(batchId, merkleRoot, 1, { from: signerAddr }),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 600))
-            ]);
-            canAnchorDirectly = true;
-          }
-        } catch {
-          canAnchorDirectly = false;
-        }
-
-        if (canAnchorDirectly) {
-          if (onProgress) onProgress('Confirm revision anchor in MetaMask...');
-          const browserProvider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await browserProvider.getSigner();
-          const anchor = new ethers.Contract(anchorAddr, ANCHOR_ABI, signer);
-
-          // Standard Bor-compliant EIP-1559 overrides (zero estimation lag)
-          const txOverrides = {
-            gasLimit: 250000n,
-            maxPriorityFeePerGas: ethers.parseUnits('45', 'gwei'),
-            maxFeePerGas: ethers.parseUnits('90', 'gwei'),
-          };
-
-          const tx = await anchor.anchorBatch(batchId, merkleRoot, 1, txOverrides);
-          if (onProgress) onProgress('Anchoring revision on-chain...');
-          const receipt = await tx.wait();
-          txHash = receipt.hash;
-          blockNumber = receipt.blockNumber;
-
-          recordAuditEvent({
-            id: `anchor_${versionId}`,
-            event_name: 'MerkleRootAnchored',
-            contract_addr: anchorAddr,
-            block_number: blockNumber,
-            tx_hash: txHash,
-            created_at: new Date().toISOString(),
-            decoded: {
-              batchId,
-              merkleRoot,
-              leafCount: 1,
-              account: signerAddr,
-              target: `${doc?.title || docId} (${versionId})`,
-            }
-          });
-        }
-      }
-    } catch (walletErr) {
-      if (walletErr.message && walletErr.message.includes('cancelled')) {
-        throw walletErr;
-      }
-      console.warn('[FastAnchor] Wallet prompt bypassed, anchored with verified cryptographic proof:', walletErr.message);
     }
   }
+
+  // Account check & prompt
+  let accounts = [];
+  try {
+    accounts = await window.ethereum.request({ method: 'eth_accounts' });
+  } catch {}
+  if (!accounts || accounts.length === 0) {
+    if (onProgress) onProgress('Connecting MetaMask account...');
+    accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  }
+  if (!accounts || accounts.length === 0) {
+    throw new Error('Please unlock and connect your MetaMask wallet to proceed.');
+  }
+
+  const signerAddr = accounts[0].toLowerCase();
+  const browserProvider = new ethers.BrowserProvider(window.ethereum);
+  const signer = await browserProvider.getSigner();
+  const anchor = new ethers.Contract(anchorAddr, ANCHOR_ABI, signer);
+
+  // Standard Bor-compliant EIP-1559 overrides (zero estimation lag, instant popup)
+  const txOverrides = {
+    gasLimit: 300000n,
+    maxPriorityFeePerGas: ethers.parseUnits('45', 'gwei'),
+    maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+  };
+
+  if (onProgress) onProgress('Confirm revision anchor in MetaMask popup...');
+  let tx;
+  try {
+    tx = await anchor.anchorBatch(batchId, merkleRoot, 1, txOverrides);
+  } catch (err) {
+    const fullErrStr = (
+      (err.message || '') + ' ' +
+      (err.shortMessage || '') + ' ' +
+      (err.info?.error?.message || '') + ' ' +
+      (err.cause?.message || '') + ' ' +
+      JSON.stringify(err.info || {})
+    ).toLowerCase();
+
+    if (err.code === 'ACTION_REJECTED' || err.code === 4001 || fullErrStr.includes('user rejected') || fullErrStr.includes('action_rejected')) {
+      throw new Error('Revision anchor cancelled: Signature was rejected in MetaMask.');
+    }
+    if (fullErrStr.includes('insufficient funds') || fullErrStr.includes('gas * price + value')) {
+      throw new Error('Insufficient POL balance in your wallet to pay Polygon Amoy gas fees.');
+    }
+    if (fullErrStr.includes('gas price below minimum') || fullErrStr.includes('gas tip cap')) {
+      if (onProgress) onProgress('Retrying with elevated Amoy gas tip (60 Gwei)...');
+      try {
+        const retryOverrides = {
+          gasLimit: 350000n,
+          maxPriorityFeePerGas: ethers.parseUnits('60', 'gwei'),
+          maxFeePerGas: ethers.parseUnits('120', 'gwei'),
+        };
+        tx = await anchor.anchorBatch(batchId, merkleRoot, 1, retryOverrides);
+      } catch (retryErr) {
+        throw new Error('Polygon Amoy gas tip requirement. Ensure your wallet has POL testnet tokens.');
+      }
+    } else if (fullErrStr.includes('unauthorized') || fullErrStr.includes('anchor: unauthorized')) {
+      throw new Error(`Anchor unauthorized: Connected wallet (${signerAddr.slice(0, 6)}...${signerAddr.slice(-4)}) requires ANCHOR_ROLE or ADMIN_ROLE in Identity & Access Manager.`);
+    } else {
+      throw new Error(`On-chain transaction failed: ${err.shortMessage || err.reason || err.message}`);
+    }
+  }
+
+  if (onProgress) onProgress('Anchoring revision on Polygon Amoy blockchain...');
+  const receipt = await tx.wait(1);
+  txHash = receipt.hash;
+  blockNumber = receipt.blockNumber;
+
+  recordAuditEvent({
+    id: `anchor_${versionId}`,
+    event_name: 'MerkleRootAnchored',
+    contract_addr: anchorAddr,
+    block_number: blockNumber,
+    tx_hash: txHash,
+    created_at: new Date().toISOString(),
+    decoded: {
+      batchId,
+      merkleRoot,
+      leafCount: 1,
+      account: signerAddr,
+      target: `${doc?.title || docId} (${versionId})`,
+    }
+  });
 
   // 4. Update Document State & Cache Instantly (0ms delay)
   const newVer = {
