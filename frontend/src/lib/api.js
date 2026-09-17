@@ -174,6 +174,9 @@ export async function syncAuditEventToCloud(entry) {
     const list = Array.from(map.values());
     list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const res = await s3PutJson('audit-registry.json', list);
+    if (res.ok) {
+      broadcastLiveEvent('sc_audit_updated', entry);
+    }
     return res.ok;
   } catch (err) {
     console.warn('[AuditCloud] sync failed:', err);
