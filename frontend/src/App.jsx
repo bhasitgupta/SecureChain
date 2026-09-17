@@ -72,12 +72,12 @@ function AppRoutes() {
         <Route path="/" element={<Landing />} />
         <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/identity" element={<RoleRoute roles={['ADMIN']}><Identity /></RoleRoute>} />
+          <Route path="/identity" element={<RoleRoute roles={['ADMIN', 'MANAGER']}><Identity /></RoleRoute>} />
           <Route path="/rbac" element={<RoleRoute roles={['ADMIN']}><RBAC /></RoleRoute>} />
           <Route path="/assets" element={<RoleRoute roles={['ADMIN', 'MANAGER', 'USER']}><Assets /></RoleRoute>} />
           <Route path="/documents" element={<Documents />} />
           <Route path="/verification" element={<Verification />} />
-          <Route path="/audit" element={<RoleRoute roles={['ADMIN', 'AUDITOR']}><Audit /></RoleRoute>} />
+          <Route path="/audit" element={<RoleRoute roles={['ADMIN', 'MANAGER', 'AUDITOR']}><Audit /></RoleRoute>} />
           <Route path="/recovery" element={<RoleRoute roles={['ADMIN']}><Recovery /></RoleRoute>} />
           <Route path="/settings" element={<Settings />} />
         </Route>

@@ -7,12 +7,12 @@ export const DOC_STATES = [
 
 export const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: 'LayoutDashboard', roles: ['ADMIN', 'MANAGER', 'AUDITOR', 'USER'] },
-  { path: '/identity', label: 'Identity', icon: 'Fingerprint', roles: ['ADMIN'] },
+  { path: '/identity', label: 'Identity', icon: 'Fingerprint', roles: ['ADMIN', 'MANAGER'] },
   { path: '/rbac', label: 'Access Control', icon: 'Shield', roles: ['ADMIN'] },
   { path: '/assets', label: 'Digital Assets', icon: 'Gem', roles: ['ADMIN', 'MANAGER', 'USER'] },
   { path: '/verification', label: 'Document Verification', icon: 'ShieldCheck', roles: ['ADMIN', 'MANAGER', 'AUDITOR', 'USER'] },
   { path: '/documents', label: 'Document Proofs', icon: 'FileText', roles: ['ADMIN', 'MANAGER', 'AUDITOR', 'USER'] },
-  { path: '/audit', label: 'Audit Trail', icon: 'ScrollText', roles: ['ADMIN', 'AUDITOR'] },
+  { path: '/audit', label: 'Audit Trail', icon: 'ScrollText', roles: ['ADMIN', 'MANAGER', 'AUDITOR'] },
   { path: '/recovery', label: 'Recovery Settings', icon: 'KeyRound', roles: ['ADMIN'] },
   { path: '/settings', label: 'System Settings', icon: 'Settings', roles: ['ADMIN', 'MANAGER', 'AUDITOR', 'USER'] },
 ];

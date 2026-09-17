@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { mockDocuments, mockVersions } from '../utils/mockData';
 import { formatDate, truncateHash, getStatusColor } from '../utils/formatters';
 import { 
@@ -29,6 +30,10 @@ import EmptyState from '../components/EmptyState';
 import './Documents.css';
 
 export default function Documents() {
+  const { wallet, role } = useAuth();
+  const userRole = role || 'USER';
+  const isAuditor = userRole === 'AUDITOR';
+
   const [documents, setDocuments] = useState(mockDocuments);
   const [search, setSearch] = useState('');
   const [showUpload, setShowUpload] = useState(false);
@@ -54,18 +59,20 @@ export default function Documents() {
       const data = await fetchDocuments();
       if (data && data.length > 0) {
         setDocuments(data.map(d => ({
-          documentId: d.document_id || d.documentId,
-          title: d.title,
+          documentId: d.document_id || d.documentId || 'doc_' + Math.random().toString(36).substring(2, 9),
+          title: d.title || d.fileName || 'Untitled Document',
           latestVersion: d.latest_seq || d.latestVersion || 1,
           hash: d.sha256 || d.hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
           status: d.state || d.status || 'ANCHORED',
-          owner: d.creator_did || d.owner || 'Enterprise Admin',
+          owner: d.creator_did || d.owner || (d.ownerAddress ? `${d.ownerAddress.slice(0, 6)}...${d.ownerAddress.slice(-4)}` : (userRole === 'ADMIN' ? 'Enterprise Admin' : `${userRole} User`)),
+          ownerAddress: d.ownerAddress || d.owner_address || null,
           updatedAt: d.updated_at || d.updatedAt || Date.now(),
+          createdAt: d.createdAt || d.created_at || d.updatedAt || Date.now(),
           versions: d.versions || [],
           txHash: d.tx_hash || d.txHash || null,
           cloudDocUrl: d.cloudDocUrl || d.cloud_doc_url || null,
           fileDataUrl: d.fileDataUrl || null,
-          fileName: d.fileName || d.file_name || null,
+          fileName: d.fileName || d.file_name || 'document',
         })));
       }
     } catch (err) {
@@ -112,7 +119,7 @@ export default function Documents() {
     try {
       await uploadDocument(uploadTitle, selectedFile, (msg) => {
         setUploadSuccess(msg);
-      });
+      }, { role: userRole, wallet });
       setUploadSuccess('Document successfully anchored to Polygon Amoy!');
       setSelectedFile(null);
       setUploadTitle('');
@@ -165,7 +172,7 @@ export default function Documents() {
     try {
       const res = await uploadDocumentRevision(docId, file, (msg) => {
         setRevisionProgress(msg);
-      });
+      }, { role: userRole, wallet });
       setRevisionFile(null);
       if (res?.document) {
         setSelectedDoc(res.document);
@@ -193,9 +200,15 @@ export default function Documents() {
             <h1>Documents</h1>
             <p>Secure document management with SHA-256 proof and Merkle anchoring</p>
           </div>
-          <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
-            <Upload size={16} /> Upload Document
-          </button>
+          {!isAuditor ? (
+            <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
+              <Upload size={16} /> Upload Document
+            </button>
+          ) : (
+            <span className="badge badge-info font-mono" style={{ padding: '6px 12px' }}>
+              Auditor Mode (Read Only)
+            </span>
+          )}
         </div>
       </div>
 
@@ -229,10 +242,10 @@ export default function Documents() {
           <tbody>
             {filtered.map(doc => (
               <tr key={doc.documentId} style={{ cursor: 'pointer' }} onClick={() => handleDocClick(doc)}>
-                <td className="font-mono text-sm" style={{ color: 'var(--color-action)', fontWeight: 600 }}>{doc.documentId}</td>
-                <td style={{ fontWeight: 500 }}>{doc.title}</td>
-                <td><span className="badge badge-info">V{doc.latestVersion}</span></td>
-                <td className="font-mono text-xs">{truncateHash(doc.hash)}</td>
+                <td className="font-mono text-sm" style={{ color: 'var(--color-action)', fontWeight: 600 }}>{doc.documentId || '—'}</td>
+                <td style={{ fontWeight: 500 }}>{doc.title || doc.fileName || 'Untitled Document'}</td>
+                <td><span className="badge badge-info">V{doc.latestVersion || 1}</span></td>
+                <td className="font-mono text-xs">{truncateHash(doc.hash || '—')}</td>
                 <td className="font-mono text-xs">
                   {doc.txHash && typeof doc.txHash === 'string' && doc.txHash.length === 66 && doc.txHash.startsWith('0x') ? (
                     <a 
@@ -249,14 +262,14 @@ export default function Documents() {
                     <span className="text-tertiary font-mono">—</span>
                   )}
                 </td>
-                <td><span className={`badge badge-${getStatusColor(doc.status)}`}>{doc.status}</span></td>
-                <td className="text-sm">{doc.owner}</td>
-                <td className="text-sm text-secondary">{formatDate(doc.updatedAt)}</td>
+                <td><span className={`badge badge-${getStatusColor(doc.status || 'ANCHORED')}`}>{doc.status || 'ANCHORED'}</span></td>
+                <td className="text-sm">{doc.owner || (doc.ownerAddress ? `${doc.ownerAddress.slice(0, 6)}...${doc.ownerAddress.slice(-4)}` : 'Enterprise Principal')}</td>
+                <td className="text-sm text-secondary">{formatDate(doc.updatedAt || Date.now())}</td>
                 <td onClick={e => e.stopPropagation()} style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                   <button 
                     className="btn btn-ghost btn-xs" 
                     title="Download Document"
-                    onClick={() => handleDownload(doc.documentId, doc.latestVersion)}
+                    onClick={() => handleDownload(doc.documentId, doc.latestVersion || 1)}
                     style={{ padding: '4px 6px', marginRight: 4 }}
                   >
                     <Download size={14} />
@@ -338,7 +351,7 @@ export default function Documents() {
             <button 
               className="btn btn-primary w-full" 
               style={{ marginTop: 'var(--space-md)' }} 
-              onClick={handleUpload}
+              onClick={handleUploadSubmit}
               disabled={uploadLoading || !selectedFile}
             >
               {uploadLoading ? <><Loader2 size={16} className="spin" /> Uploading...</> : 'Upload & Anchor'}
@@ -375,27 +388,29 @@ export default function Documents() {
                   </div>
                 )}
               </div>
-              <div>
-                <label 
-                  className={`btn btn-ghost btn-sm ${revisionLoading ? 'opacity-50' : ''}`} 
-                  style={{ cursor: revisionLoading ? 'wait' : 'pointer' }}
-                >
-                  <Plus size={14} /> {revisionLoading ? 'Anchoring...' : 'Add Revision'}
-                  <input 
-                    type="file" 
-                    disabled={revisionLoading}
-                    style={{ display: 'none' }} 
-                    onChange={e => {
-                      if (e.target.files && e.target.files[0]) {
-                        const file = e.target.files[0];
-                        setRevisionFile(file);
-                        handleAddRevision(selectedDoc.documentId, file);
-                        e.target.value = '';
-                      }
-                    }} 
-                  />
-                </label>
-              </div>
+              {!isAuditor && (
+                <div>
+                  <label 
+                    className={`btn btn-ghost btn-sm ${revisionLoading ? 'opacity-50' : ''}`} 
+                    style={{ cursor: revisionLoading ? 'wait' : 'pointer' }}
+                  >
+                    <Plus size={14} /> {revisionLoading ? 'Anchoring...' : 'Add Revision'}
+                    <input 
+                      type="file" 
+                      disabled={revisionLoading}
+                      style={{ display: 'none' }} 
+                      onChange={e => {
+                        if (e.target.files && e.target.files[0]) {
+                          const file = e.target.files[0];
+                          setRevisionFile(file);
+                          handleAddRevision(selectedDoc.documentId, file);
+                          e.target.value = '';
+                        }
+                      }} 
+                    />
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="version-timeline">
