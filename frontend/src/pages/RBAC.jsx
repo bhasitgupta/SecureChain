@@ -10,7 +10,8 @@ import {
   ROLE_HASHES,
   checkOnChainRole,
   syncCloudRoles,
-  DEFAULT_ROLES
+  DEFAULT_ROLES,
+  PRIMARY_ADMIN_ADDRESS
 } from '../utils/roleRegistry';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { grantRoleOnChain, revokeRoleOnChain, fetchCloudRoles, syncRolesToCloud, syncAuditEventToCloud } from '../lib/api';
@@ -693,16 +694,9 @@ export default function RBAC() {
 
       {/* ── Section 2: Direct Role Assignment by Wallet Address ── */}
       <div className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-        <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-md)', flexWrap: 'wrap', gap: '12px' }}>
-          <div className="flex items-center gap-sm">
-            <UserPlus size={18} style={{ color: 'var(--color-action)' }} />
-            <h3 style={{ margin: 0 }}>Assign Role by Wallet Address</h3>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.08)', padding: '6px 14px', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 600, color: '#10B981' }}>
-              <CheckCircle2 size={14} /> 100% On-Chain Mode (Polygon Amoy)
-            </span>
-          </div>
+        <div className="flex items-center gap-sm" style={{ marginBottom: 'var(--space-md)' }}>
+          <UserPlus size={18} style={{ color: 'var(--color-action)' }} />
+          <h3 style={{ margin: 0 }}>Assign Role by Wallet Address</h3>
         </div>
         <p className="text-sm text-secondary" style={{ marginBottom: 'var(--space-md)' }}>
           Every role assignment, modification, and revocation opens your wallet for on-chain confirmation and executes directly on the Polygon Amoy smart contract.
