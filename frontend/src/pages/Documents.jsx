@@ -161,15 +161,17 @@ export default function Documents() {
     const file = fileToUpload || revisionFile;
     if (!file) return;
     setRevisionLoading(true);
-    setRevisionProgress('Initiating revision upload...');
+    setRevisionProgress('Anchoring revision...');
     try {
-      await uploadDocumentRevision(docId, file, (msg) => {
+      const res = await uploadDocumentRevision(docId, file, (msg) => {
         setRevisionProgress(msg);
       });
       setRevisionFile(null);
-      await loadDocs();
-      const updated = await fetchDocumentDetail(docId);
-      if (updated) setSelectedDoc(updated);
+      if (res?.document) {
+        setSelectedDoc(res.document);
+        setDocuments(prev => prev.map(d => ((d.documentId || d.document_id) === docId ? res.document : d)));
+      }
+      loadDocs().catch(() => {});
     } catch (err) {
       alert('Revision upload failed: ' + err.message);
     } finally {
