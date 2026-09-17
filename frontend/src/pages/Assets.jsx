@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { formatDate, getStatusColor } from '../utils/formatters';
 import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, compressImage, saveAssetThumbnail, parseMetadataURI } from '../lib/api';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
-import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, RefreshCw, ImageOff } from 'lucide-react';
+import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, RefreshCw, ImageOff, ZoomIn, X, Maximize2 } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import './Assets.css';
 
@@ -19,6 +19,18 @@ export default function Assets() {
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'my'
   const [showMint, setShowMint] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [previewModal, setPreviewModal] = useState(null);
+
+  // Close lightbox on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setPreviewModal(null);
+    };
+    if (previewModal) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewModal]);
 
   // Mint Form State
   const [description, setDescription] = useState('');
@@ -319,9 +331,12 @@ export default function Assets() {
                   </div>
                 </div>
                 
-                {/* Authentic On-Chain Thumbnail Display */}
+                {/* Authentic On-Chain Thumbnail Display with HD Click-to-Enlarge */}
                 {asset.thumbnailUrl ? (
                   <div 
+                    className="asset-thumbnail-wrap"
+                    onClick={() => setPreviewModal(asset)}
+                    title="Click to view full HD image"
                     style={{ 
                       height: 150, 
                       marginBottom: 'var(--space-md)', 
@@ -332,6 +347,8 @@ export default function Assets() {
                       alignItems: 'center', 
                       justifyContent: 'center',
                       border: '1px solid #1E293B',
+                      cursor: 'zoom-in',
+                      position: 'relative',
                     }}
                   >
                     <img 
@@ -343,6 +360,9 @@ export default function Assets() {
                         if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
                       }} 
                     />
+                    <div className="thumbnail-zoom-hint">
+                      <ZoomIn size={13} /> Enlarge HD
+                    </div>
                     <div style={{ display: 'none', flexDirection: 'column', alignItems: 'center', gap: 6, color: '#64748B' }}>
                       <ImageOff size={28} />
                       <span className="text-xs">Image unavailable</span>
@@ -603,6 +623,109 @@ export default function Assets() {
                   {transferModal.loading ? <><Loader2 size={16} className="spin" /> Confirming in Wallet...</> : 'Execute On-Chain Transfer'}
                 </button>
                 <button className="btn btn-secondary" onClick={closeTransferModal}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* High-Resolution HD Image Lightbox Modal */}
+      {previewModal && (
+        <div 
+          className="modal-overlay animate-fade-in" 
+          onClick={() => setPreviewModal(null)}
+          style={{ 
+            background: 'rgba(2, 6, 23, 0.88)', 
+            backdropFilter: 'blur(10px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-md)'
+          }}
+        >
+          <div 
+            className="card animate-fade-scale" 
+            onClick={e => e.stopPropagation()}
+            style={{ 
+              maxWidth: '92vw', 
+              maxHeight: '92vh', 
+              width: 'auto',
+              display: 'flex', 
+              flexDirection: 'column', 
+              padding: 'var(--space-md)',
+              background: '#0B132B',
+              border: '1px solid #1E293B',
+              borderRadius: 12,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.85)'
+            }}
+          >
+            <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-sm)', gap: 'var(--space-md)' }}>
+              <div className="flex items-center gap-sm">
+                <span className="badge badge-info font-mono">Token #{previewModal.tokenId}</span>
+                <span style={{ fontWeight: 600, fontSize: '1.05rem', color: '#F8FAFC' }}>
+                  {previewModal.description?.startsWith('data:') 
+                    ? (parseMetadataURI(previewModal.description)?.name || `Asset #${previewModal.tokenId}`) 
+                    : (previewModal.description || `Asset #${previewModal.tokenId}`)}
+                </span>
+                <span className={`badge badge-${getStatusColor(previewModal.assetStatus)}`}>{previewModal.assetStatus}</span>
+              </div>
+              <button 
+                className="btn-icon btn-ghost" 
+                onClick={() => setPreviewModal(null)} 
+                title="Close (Esc)"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div 
+              style={{ 
+                flex: 1, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                overflow: 'hidden',
+                borderRadius: 8,
+                background: '#020617',
+                border: '1px solid #1E293B',
+                maxHeight: '70vh',
+                minWidth: 'min(480px, 85vw)',
+              }}
+            >
+              <img 
+                src={previewModal.thumbnailUrl} 
+                alt={previewModal.description} 
+                style={{ 
+                  maxWidth: '100%', 
+                  maxHeight: '70vh', 
+                  objectFit: 'contain',
+                  display: 'block'
+                }} 
+              />
+            </div>
+
+            <div className="flex items-center justify-between" style={{ marginTop: 'var(--space-sm)', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
+              <div className="text-xs text-secondary">
+                <span className="text-tertiary">Asset Class:</span> {previewModal.assetClass} • <span className="text-tertiary">Owner:</span> <span className="font-mono">{typeof previewModal.ownerName === 'string' && previewModal.ownerName.startsWith('0x') ? `${previewModal.ownerName.slice(0, 8)}...${previewModal.ownerName.slice(-6)}` : previewModal.ownerName}</span>
+              </div>
+              <div className="flex items-center gap-sm">
+                {previewModal.thumbnailUrl && (
+                  <button 
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => window.open(previewModal.thumbnailUrl, '_blank')}
+                  >
+                    Open Original HD <ExternalLink size={12} />
+                  </button>
+                )}
+                {previewModal.txHash && (
+                  <button 
+                    className="btn btn-ghost btn-xs text-action font-mono"
+                    onClick={() => window.open(`https://amoy.polygonscan.com/tx/${previewModal.txHash}`, '_blank')}
+                  >
+                    TX Hash <ExternalLink size={12} />
+                  </button>
+                )}
               </div>
             </div>
           </div>

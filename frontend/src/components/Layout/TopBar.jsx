@@ -9,7 +9,7 @@ const PAGE_NAMES = {
   '/dashboard': 'Dashboard',
   '/identity': 'Identity',
   '/rbac': 'Access Control',
-  '/assets': 'Digital Access',
+  '/assets': 'Digital Assets',
   '/verification': 'Document Verification',
   '/documents': 'Document Proofs',
   '/audit': 'Audit Trail',

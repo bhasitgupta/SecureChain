@@ -17,10 +17,9 @@ export const ROLE_HASHES = {
 
 // High-speed, verified Polygon Amoy RPC endpoints with automatic failover
 export const AMOY_RPCS = [
-  NETWORK.rpcUrl || 'https://polygon-amoy.drpc.org',
-  'https://rpc-amoy.polygon.technology',
   'https://polygon-amoy-bor-rpc.publicnode.com',
-  'https://amoy.drpc.org',
+  NETWORK.rpcUrl,
+  'https://polygon-amoy.drpc.org',
 ].filter((url, idx, arr) => url && arr.indexOf(url) === idx);
 
 // Primary Governance Admin Address (Main user wallet - permanently authoritative ADMIN)
