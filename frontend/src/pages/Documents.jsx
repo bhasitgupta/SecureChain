@@ -45,6 +45,7 @@ export default function Documents() {
   // Revision State
   const [revisionFile, setRevisionFile] = useState(null);
   const [revisionLoading, setRevisionLoading] = useState(false);
+  const [revisionProgress, setRevisionProgress] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -57,7 +58,7 @@ export default function Documents() {
           title: d.title,
           latestVersion: d.latest_seq || d.latestVersion || 1,
           hash: d.sha256 || d.hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-          status: d.state || d.status || 'VERIFIABLE',
+          status: d.state || d.status || 'ANCHORED',
           owner: d.creator_did || d.owner || 'Enterprise Admin',
           updatedAt: d.updated_at || d.updatedAt || Date.now(),
           versions: d.versions || [],
@@ -99,29 +100,29 @@ export default function Documents() {
     }
   };
 
-  const handleUpload = async () => {
+  const handleUploadSubmit = async () => {
     if (!selectedFile) {
-      setUploadError('Please select a file to upload.');
+      setUploadError('Please select a confidential document file.');
       return;
     }
     setUploadLoading(true);
     setUploadError('');
-    setUploadSuccess('Preparing cryptographic anchor...');
+    setUploadSuccess('');
 
     try {
-      const res = await uploadDocument(uploadTitle, selectedFile, (stepText) => {
-        setUploadSuccess(stepText);
+      await uploadDocument(uploadTitle, selectedFile, (msg) => {
+        setUploadSuccess(msg);
       });
-      setUploadSuccess(res.txHash ? `Anchored on Polygon Amoy! TX: ${res.txHash.slice(0, 10)}...` : `Uploaded: ${res.versionId || 'V1'}`);
+      setUploadSuccess('Document successfully anchored to Polygon Amoy!');
       setSelectedFile(null);
       setUploadTitle('');
       await loadDocs();
       setTimeout(() => {
         setShowUpload(false);
         setUploadSuccess('');
-      }, 2400);
+      }, 1500);
     } catch (err) {
-      setUploadError(err.message || 'Upload failed');
+      setUploadError(err.message || 'Failed to upload and anchor document');
     } finally {
       setUploadLoading(false);
     }
@@ -134,6 +135,7 @@ export default function Documents() {
       if (detail) {
         setSelectedDoc(prev => ({
           ...prev,
+          ...detail,
           versions: detail.versions || prev.versions || [],
           cloudDocUrl: detail.cloudDocUrl || prev.cloudDocUrl,
           fileDataUrl: detail.fileDataUrl || prev.fileDataUrl,
@@ -151,17 +153,19 @@ export default function Documents() {
       }
     } catch (err) {
       console.error('Download error:', err);
-      if (selectedDoc) {
-        downloadProofCertificate(selectedDoc);
-      }
+      alert('Document download failed: ' + (err.message || 'File could not be retrieved'));
     }
   };
 
-  const handleAddRevision = async (docId) => {
-    if (!revisionFile) return;
+  const handleAddRevision = async (docId, fileToUpload) => {
+    const file = fileToUpload || revisionFile;
+    if (!file) return;
     setRevisionLoading(true);
+    setRevisionProgress('Initiating revision upload...');
     try {
-      await uploadDocumentRevision(docId, revisionFile);
+      await uploadDocumentRevision(docId, file, (msg) => {
+        setRevisionProgress(msg);
+      });
       setRevisionFile(null);
       await loadDocs();
       const updated = await fetchDocumentDetail(docId);
@@ -170,6 +174,7 @@ export default function Documents() {
       alert('Revision upload failed: ' + err.message);
     } finally {
       setRevisionLoading(false);
+      setRevisionProgress('');
     }
   };
 
@@ -360,17 +365,30 @@ export default function Documents() {
             </div>
 
             <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-md)' }}>
-              <h4>Version Timeline</h4>
               <div>
-                <label className="btn btn-ghost btn-sm" style={{ cursor: 'pointer' }}>
-                  <Plus size={14} /> Add Revision
+                <h4 style={{ margin: 0 }}>Version Timeline</h4>
+                {revisionLoading && (
+                  <div className="text-xs text-action font-mono" style={{ marginTop: 2 }}>
+                    ⏳ {revisionProgress || 'Anchoring to Polygon Amoy...'}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label 
+                  className={`btn btn-ghost btn-sm ${revisionLoading ? 'opacity-50' : ''}`} 
+                  style={{ cursor: revisionLoading ? 'wait' : 'pointer' }}
+                >
+                  <Plus size={14} /> {revisionLoading ? 'Anchoring...' : 'Add Revision'}
                   <input 
                     type="file" 
+                    disabled={revisionLoading}
                     style={{ display: 'none' }} 
                     onChange={e => {
                       if (e.target.files && e.target.files[0]) {
-                        setRevisionFile(e.target.files[0]);
-                        handleAddRevision(selectedDoc.documentId);
+                        const file = e.target.files[0];
+                        setRevisionFile(file);
+                        handleAddRevision(selectedDoc.documentId, file);
+                        e.target.value = '';
                       }
                     }} 
                   />

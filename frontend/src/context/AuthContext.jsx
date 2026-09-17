@@ -70,7 +70,6 @@ export function AuthProvider({ children }) {
         setRole('ADMIN');
         saveSession({ ...session, role: 'ADMIN' });
       } else {
-        // Verify on-chain and authoritative status asynchronously
         resolveAuthoritativeRole(session.wallet).then(resRole => {
           if (resRole) {
             setRole(resRole);
@@ -80,7 +79,7 @@ export function AuthProvider({ children }) {
         fetchRolesForAddress(session.wallet)
           .then((data) => {
             const derived = data?.assignedRole || deriveRoleFromRoleMap(data?.roles);
-            if (derived) {
+            if (derived && derived !== 'USER') {
               setRole(derived);
               saveSession({ ...session, role: derived });
             }
@@ -202,7 +201,7 @@ export function AuthProvider({ children }) {
       try {
         const roleData = await fetchRolesForAddress(address);
         const derived = roleData?.assignedRole || deriveRoleFromRoleMap(roleData?.roles);
-        if (derived) {
+        if (derived && derived !== 'USER') {
           authoritativeRole = derived;
         }
       } catch {}

@@ -29,7 +29,7 @@ export const PRIMARY_ADMIN_ADDRESS = '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c
 export const DEFAULT_ROLES = {
   '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
   '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
-  '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a': 'AUDITOR',
+  '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a': 'MANAGER',
 };
 
 const DEFAULT_REQUESTS = [];
@@ -222,9 +222,15 @@ export async function resolveAuthoritativeRole(address) {
     return 'ADMIN';
   }
 
+  // 1. Sync latest roles from cloud registry first
+  try {
+    await syncCloudRoles();
+  } catch (e) {}
+
+  // 2. Query on-chain IAM contract for verified role
   try {
     const onChainRole = await checkOnChainRole(normalized);
-    if (onChainRole) {
+    if (onChainRole && onChainRole !== 'USER') {
       const local = getAllWalletRoles();
       local[normalized] = onChainRole;
       saveStoredRoles(local);
@@ -232,7 +238,13 @@ export async function resolveAuthoritativeRole(address) {
     }
   } catch (e) {}
 
-  return getRoleForWallet(normalized);
+  // 3. Fallback to assigned role from cloud & local store (never overwrite with USER)
+  const assigned = getRoleForWallet(normalized);
+  if (assigned && assigned !== 'USER') {
+    return assigned;
+  }
+
+  return 'USER';
 }
 
 /**
