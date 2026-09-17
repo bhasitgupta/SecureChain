@@ -404,6 +404,22 @@ export default function Assets() {
                   </div>
                 </div>
 
+                {asset.txHash && typeof asset.txHash === 'string' && asset.txHash.startsWith('0x') && asset.txHash.length === 66 && (
+                  <div style={{ marginTop: 'var(--space-xs)', marginBottom: 'var(--space-xs)' }}>
+                    <a
+                      href={`https://amoy.polygonscan.com/tx/${asset.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-xs text-xs font-mono text-action"
+                      style={{ textDecoration: 'none' }}
+                      title={`View mint transaction on Polygonscan: ${asset.txHash}`}
+                    >
+                      <span>TX: {asset.txHash.slice(0, 10)}...{asset.txHash.slice(-6)}</span>
+                      <ExternalLink size={10} />
+                    </a>
+                  </div>
+                )}
+
                 <div className="flex gap-sm" style={{ marginTop: 'var(--space-md)' }}>
                   <button 
                     className="btn btn-ghost btn-sm" 

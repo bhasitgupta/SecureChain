@@ -20,7 +20,8 @@ import {
   Plus, 
   AlertCircle, 
   CheckCircle2, 
-  Loader2 
+  Loader2,
+  ExternalLink
 } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import './Documents.css';
@@ -58,6 +59,7 @@ export default function Documents() {
           owner: d.creator_did || d.owner || 'Enterprise Admin',
           updatedAt: d.updated_at || d.updatedAt || Date.now(),
           versions: d.versions || [],
+          txHash: d.tx_hash || d.txHash || null,
         })));
       }
     } catch (err) {
@@ -190,6 +192,7 @@ export default function Documents() {
               <th>Title</th>
               <th>Version</th>
               <th>SHA-256</th>
+              <th>TX Hash</th>
               <th>Status</th>
               <th>Owner</th>
               <th>Updated</th>
@@ -203,6 +206,22 @@ export default function Documents() {
                 <td style={{ fontWeight: 500 }}>{doc.title}</td>
                 <td><span className="badge badge-info">V{doc.latestVersion}</span></td>
                 <td className="font-mono text-xs">{truncateHash(doc.hash)}</td>
+                <td className="font-mono text-xs">
+                  {doc.txHash && typeof doc.txHash === 'string' && doc.txHash.length === 66 && doc.txHash.startsWith('0x') ? (
+                    <a 
+                      href={`https://amoy.polygonscan.com/tx/${doc.txHash}`} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="flex items-center gap-xs text-action"
+                      onClick={e => e.stopPropagation()}
+                      title={`View on Polygonscan: ${doc.txHash}`}
+                    >
+                      {doc.txHash.slice(0, 8)}... <ExternalLink size={10} />
+                    </a>
+                  ) : (
+                    <span className="text-tertiary font-mono">—</span>
+                  )}
+                </td>
                 <td><span className={`badge badge-${getStatusColor(doc.status)}`}>{doc.status}</span></td>
                 <td className="text-sm">{doc.owner}</td>
                 <td className="text-sm text-secondary">{formatDate(doc.updatedAt)}</td>
@@ -356,6 +375,19 @@ export default function Documents() {
                     <div className="text-xs text-secondary">
                       Merkle Root: <span className="font-mono">{truncateHash(v.merkleRoot || '0x6e2a9b...')}</span> • Batch: <span className="font-mono">{v.batch_id || 'Active'}</span>
                     </div>
+                    {(v.txHash || selectedDoc.txHash) && typeof (v.txHash || selectedDoc.txHash) === 'string' && (v.txHash || selectedDoc.txHash).length === 66 && (
+                      <div className="text-xs" style={{ marginTop: 4 }}>
+                        <a 
+                          href={`https://amoy.polygonscan.com/tx/${v.txHash || selectedDoc.txHash}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex items-center gap-xs text-action font-mono"
+                          title="View on Polygonscan"
+                        >
+                          TX: {(v.txHash || selectedDoc.txHash).slice(0, 12)}...{(v.txHash || selectedDoc.txHash).slice(-6)} <ExternalLink size={11} />
+                        </a>
+                      </div>
+                    )}
                     <div className="text-xs text-tertiary" style={{ marginTop: 4 }}>{formatDate(v.created_at || v.anchoredAt || Date.now())}</div>
                   </div>
                 </div>

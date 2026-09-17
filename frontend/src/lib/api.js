@@ -135,6 +135,119 @@ export async function fetchDocuments() {
   return merged;
 }
 
+/**
+ * Calculates safe dynamic Polygon Amoy EIP-1559 gas overrides.
+ * Polygon Amoy Bor nodes enforce a strict minimum gas tip cap (maxPriorityFeePerGas)
+ * of 25-35 Gwei. MetaMask defaults to 2 Gwei without this, causing "gas price below minimum" errors.
+ */
+export async function getAmoyGasOverrides(provider) {
+  try {
+    let feeData = null;
+    if (provider?.getFeeData) {
+      try {
+        feeData = await provider.getFeeData();
+      } catch {}
+    }
+
+    const minPriority = ethers.parseUnits('45', 'gwei'); // 45 Gwei (> Amoy 2.5-35 Gwei Bor minimum)
+    const maxPriorityFeePerGas = (feeData?.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority)
+      ? (feeData.maxPriorityFeePerGas * 130n) / 100n
+      : minPriority;
+
+    const baseFee = feeData?.maxFeePerGas ? (feeData.maxFeePerGas * 150n) / 100n : ethers.parseUnits('90', 'gwei');
+    const maxFeePerGas = baseFee > (maxPriorityFeePerGas * 2n)
+      ? baseFee
+      : (maxPriorityFeePerGas * 2n);
+
+    return {
+      maxPriorityFeePerGas,
+      maxFeePerGas,
+    };
+  } catch {
+    return {
+      maxPriorityFeePerGas: ethers.parseUnits('45', 'gwei'),
+      maxFeePerGas: ethers.parseUnits('90', 'gwei'),
+    };
+  }
+}
+
+/**
+ * Uploads confidential document file blob to persistent Supabase S3 bucket 'documents'
+ * using Web Crypto SigV4 so documents are permanently stored and downloadable.
+ */
+export async function uploadDocumentFileToCloud(file, onProgress) {
+  if (!file || !(file instanceof Blob)) return null;
+  try {
+    if (onProgress) onProgress('Storing document in cloud bucket...');
+    const buffer = await file.arrayBuffer();
+    const cleanName = (file.name || 'document.bin').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const objectKey = `doc_${Date.now()}_${cleanName}`;
+    const mimeType = file.type || 'application/octet-stream';
+    const bucket = 'documents';
+    const region = 'ap-southeast-1';
+    const accessKey = '5d9ea48d7120c3166091eb897edd0d5d';
+    const secretKey = 'f542e77d366cd648a5d3140fe5d6800d76f2cad86f2d63206830fde148a34ed3';
+    const host = 'zslaxuawwjieykhginxe.supabase.co';
+    const path = `/storage/v1/s3/${bucket}/${objectKey}`;
+
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const dateStamp = amzDate.substring(0, 8);
+
+    const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
+    const payloadHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const canonicalHeaders =
+      `content-type:${mimeType}\n` +
+      `host:${host}\n` +
+      `x-amz-content-sha256:${payloadHash}\n` +
+      `x-amz-date:${amzDate}\n`;
+    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
+
+    const canonicalRequest = ['PUT', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+    const canonicalReqHashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalRequest));
+    const canonicalReqHash = Array.from(new Uint8Array(canonicalReqHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const algorithm = 'AWS4-HMAC-SHA256';
+    const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+    const stringToSign = [algorithm, amzDate, credentialScope, canonicalReqHash].join('\n');
+
+    async function hmac(keyData, msgStr) {
+      const key = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msgStr));
+      return new Uint8Array(sig);
+    }
+
+    const kDate = await hmac(new TextEncoder().encode('AWS4' + secretKey), dateStamp);
+    const kRegion = await hmac(kDate, region);
+    const kService = await hmac(kRegion, 's3');
+    const kSigning = await hmac(kService, 'aws4_request');
+    const finalSigBuf = await hmac(kSigning, stringToSign);
+    const signature = Array.from(finalSigBuf).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const authHeader = `${algorithm} Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    const res = await fetch(`https://${host}${path}`, {
+      method: 'PUT',
+      headers: {
+        Host: host,
+        'Content-Type': mimeType,
+        'x-amz-date': amzDate,
+        'x-amz-content-sha256': payloadHash,
+        Authorization: authHeader,
+      },
+      body: buffer,
+    });
+
+    if (res.ok) {
+      return `https://${host}/storage/v1/object/public/${bucket}/${objectKey}`;
+    }
+  } catch (err) {
+    console.warn('Failed to upload document file to Supabase S3:', err);
+  }
+  return null;
+}
+
 export async function uploadDocument(title, file, onProgress) {
   if (typeof window === 'undefined' || !window.ethereum) {
     throw new Error('MetaMask or a Web3 wallet is required to anchor documents on Polygon Amoy.');
@@ -179,32 +292,72 @@ export async function uploadDocument(title, file, onProgress) {
   const batchId = ethers.keccak256(ethers.toUtf8Bytes(versionId + '_' + Date.now()));
   const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes(sha256Hex));
 
+  // Store file in cloud bucket asynchronously
+  let cloudDocUrl = null;
+  try {
+    cloudDocUrl = await uploadDocumentFileToCloud(file, onProgress);
+  } catch {}
+
   const browserProvider = new ethers.BrowserProvider(window.ethereum);
   const signer = await browserProvider.getSigner();
   const signerAddr = (await signer.getAddress()).toLowerCase();
   const anchorAddr = CONTRACT_ADDRESSES.DocumentAnchorRegistry || '0x8921960116d0D4a8A26aad7eA330E3f098C7F58F';
   const anchor = new ethers.Contract(anchorAddr, ANCHOR_ABI, signer);
 
+  if (onProgress) onProgress('Estimating Polygon Amoy gas fees...');
+  const gasFees = await getAmoyGasOverrides(browserProvider);
+  let txOverrides = {
+    ...gasFees,
+    gasLimit: 350000n,
+  };
+
+  try {
+    const est = await anchor.anchorBatch.estimateGas(batchId, merkleRoot, 1, { ...gasFees });
+    txOverrides.gasLimit = (est * 140n) / 100n;
+  } catch (estErr) {
+    console.warn('[anchorBatch] Gas estimation fallback:', estErr);
+  }
+
   if (onProgress) onProgress('Confirm document anchor in MetaMask popup...');
   let tx;
   try {
-    let txOverrides = {};
-    try {
-      const est = await anchor.anchorBatch.estimateGas(batchId, merkleRoot, 1);
-      txOverrides.gasLimit = (est * 130n) / 100n;
-    } catch {
-      txOverrides.gasLimit = 250000n;
-    }
     tx = await anchor.anchorBatch(batchId, merkleRoot, 1, txOverrides);
   } catch (err) {
-    if (err.code === 'ACTION_REJECTED' || err.message?.includes('user rejected')) {
+    const fullErrStr = (
+      (err.message || '') + ' ' +
+      (err.shortMessage || '') + ' ' +
+      (err.info?.error?.message || '') + ' ' +
+      (err.cause?.message || '') + ' ' +
+      JSON.stringify(err.info || {})
+    ).toLowerCase();
+
+    if (err.code === 'ACTION_REJECTED' || fullErrStr.includes('user rejected') || fullErrStr.includes('action_rejected')) {
       throw new Error('Transaction was cancelled in wallet');
     }
-    const reason = extractRevertReason(err);
-    if (reason && reason.toLowerCase().includes('unauthorized')) {
+    if (fullErrStr.includes('gas price below minimum') || fullErrStr.includes('gas tip cap')) {
+      if (onProgress) onProgress('Retrying with elevated Amoy gas tip (60 Gwei)...');
+      try {
+        const retryOverrides = {
+          gasLimit: 400000n,
+          maxPriorityFeePerGas: ethers.parseUnits('60', 'gwei'),
+          maxFeePerGas: ethers.parseUnits('120', 'gwei'),
+        };
+        tx = await anchor.anchorBatch(batchId, merkleRoot, 1, retryOverrides);
+      } catch (retryErr) {
+        throw new Error('Polygon Amoy gas tip requirement. Ensure your wallet has POL testnet tokens.');
+      }
+    } else if (fullErrStr.includes('unauthorized') || fullErrStr.includes('not admin') || fullErrStr.includes('perm_anchor')) {
       throw new Error('Your wallet does not have permission to anchor on DocumentAnchorRegistry. Check IAM role.');
+    } else {
+      const reason = extractRevertReason(err);
+      if (reason && reason.toLowerCase().includes('unauthorized')) {
+        throw new Error('Your wallet does not have permission to anchor on DocumentAnchorRegistry. Check IAM role.');
+      }
+      if (reason && !reason.toLowerCase().includes('could not coalesce')) {
+        throw new Error(reason);
+      }
+      throw new Error('On-chain document anchor failed on Polygon Amoy. Check wallet POL balance and IAM permissions.');
     }
-    throw new Error(reason || err.message || 'On-chain document anchor failed');
   }
 
   if (onProgress) onProgress('Anchoring root to Polygon Amoy blockchain...');
@@ -214,6 +367,7 @@ export async function uploadDocument(title, file, onProgress) {
   const status = 'ANCHORED';
 
   recordAuditEvent({
+    id: `anchor_${docId}`,
     event_name: 'MerkleRootAnchored',
     contract_addr: anchorAddr,
     block_number: blockNumber,
@@ -383,36 +537,109 @@ export const ANCHOR_ABI = [
   'event MerkleRootAnchored(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 leafCount, address indexed anchorer)'
 ];
 
-export const VERIFIED_AMOY_MINT_TXS = {
-  '1': {
-    txHash: '0xc5a0fda389ec526866dfbc46888056c73e40bb02be126c5c77322168a19dacaa',
-    blockNumber: 47677525,
-    createdAt: '2026-09-15T19:15:01.000Z',
-    actor: '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a',
-    name: 'matix',
-  },
-  '2': {
-    txHash: '0x2693b668c04c60984ca5a66ab92587910474cff1d4b292a9ed8e2810c42a4688',
-    blockNumber: 47764041,
-    createdAt: '2026-09-16T19:16:59.000Z',
-    actor: '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c',
-    name: 'neon Cat',
-  },
-  '3': {
-    txHash: '0xc1e6cef94ed6d21738201d7a4cc1da6711c8fed506d8b43c152a8a0fe1051572',
-    blockNumber: 47817136,
-    createdAt: '2026-09-17T10:02:09.000Z',
-    actor: '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c',
-    name: 'Ronin Cyberpunk / Ronin Asset',
-  },
-  '4': {
-    txHash: '0x497fd9956ec9df1041456b4c93693b10cdf8a46ea45b49436ab6f944e3f64cf5',
-    blockNumber: 47817964,
-    createdAt: '2026-09-17T10:15:57.000Z',
-    actor: '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c',
-    name: '7 layers of AI',
-  },
-};
+// ── Dynamic Cloud Audit Registry (Supabase S3 Persistent Storage) ──
+const CLOUD_AUDIT_REGISTRY_URL = 'https://zslaxuawwjieykhginxe.supabase.co/storage/v1/object/public/asset-thumbnails/audit-registry.json';
+
+export async function fetchAuditEventsFromCloud() {
+  try {
+    const res = await fetch(`${CLOUD_AUDIT_REGISTRY_URL}?t=${Date.now()}`, {
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[AuditCloud] fetch failed:', err);
+  }
+  return [];
+}
+
+export async function syncAuditEventToCloud(entry) {
+  if (!entry || !entry.tx_hash || entry.tx_hash.length !== 66 || !entry.tx_hash.startsWith('0x')) {
+    return false;
+  }
+
+  try {
+    const current = await fetchAuditEventsFromCloud();
+    const map = new Map();
+    for (const e of current) {
+      if (e && e.tx_hash && e.tx_hash.length === 66) {
+        map.set(e.id || e.tx_hash, e);
+      }
+    }
+    map.set(entry.id || entry.tx_hash, entry);
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    const jsonStr = JSON.stringify(list, null, 2);
+    const buffer = new TextEncoder().encode(jsonStr);
+    const bucket = 'asset-thumbnails';
+    const objectKey = 'audit-registry.json';
+    const mimeType = 'application/json';
+    const region = 'ap-southeast-1';
+    const accessKey = '5d9ea48d7120c3166091eb897edd0d5d';
+    const secretKey = 'f542e77d366cd648a5d3140fe5d6800d76f2cad86f2d63206830fde148a34ed3';
+    const host = 'zslaxuawwjieykhginxe.supabase.co';
+    const path = `/storage/v1/s3/${bucket}/${objectKey}`;
+
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const dateStamp = amzDate.substring(0, 8);
+
+    const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
+    const payloadHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const canonicalHeaders =
+      `content-type:${mimeType}\n` +
+      `host:${host}\n` +
+      `x-amz-content-sha256:${payloadHash}\n` +
+      `x-amz-date:${amzDate}\n`;
+    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
+
+    const canonicalRequest = ['PUT', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+    const canonicalReqHashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalRequest));
+    const canonicalReqHash = Array.from(new Uint8Array(canonicalReqHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const algorithm = 'AWS4-HMAC-SHA256';
+    const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+    const stringToSign = [algorithm, amzDate, credentialScope, canonicalReqHash].join('\n');
+
+    async function hmac(keyData, msgStr) {
+      const key = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msgStr));
+      return new Uint8Array(sig);
+    }
+
+    const kDate = await hmac(new TextEncoder().encode('AWS4' + secretKey), dateStamp);
+    const kRegion = await hmac(kDate, region);
+    const kService = await hmac(kRegion, 's3');
+    const kSigning = await hmac(kService, 'aws4_request');
+    const finalSigBuf = await hmac(kSigning, stringToSign);
+    const signature = Array.from(finalSigBuf).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    const authHeader = `${algorithm} Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    await fetch(`https://${host}${path}`, {
+      method: 'PUT',
+      headers: {
+        Host: host,
+        'Content-Type': mimeType,
+        'x-amz-date': amzDate,
+        'x-amz-content-sha256': payloadHash,
+        Authorization: authHeader,
+      },
+      body: buffer,
+    });
+    return true;
+  } catch (err) {
+    console.warn('[AuditCloud] sync failed:', err);
+    return false;
+  }
+}
 
 const AUDIT_EVENTS_KEY = 'sc_audit_events';
 
@@ -430,7 +657,7 @@ export function recordAuditEvent(evt) {
       id: evt.id || `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       event_name: evt.event_name,
       contract_addr: evt.contract_addr || CONTRACT_ADDRESSES.EnterpriseAssetNFT,
-      block_number: evt.block_number || 47818000,
+      block_number: evt.block_number || 47820000,
       tx_hash: evt.tx_hash,
       created_at: evt.created_at || new Date().toISOString(),
       decoded: evt.decoded || {},
@@ -438,6 +665,19 @@ export function recordAuditEvent(evt) {
     stored.unshift(entry);
     localStorage.setItem(AUDIT_EVENTS_KEY, JSON.stringify(stored.slice(0, 100)));
     window.dispatchEvent(new CustomEvent('sc_audit_updated', { detail: entry }));
+
+    // Dynamically persist to Supabase S3 bucket in background for all users
+    syncAuditEventToCloud(entry).catch(() => {});
+
+    // Also notify backend gateway if active
+    if (isBackendConfigured()) {
+      fetch(`${API_BASE}/audit/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(entry),
+        credentials: 'include',
+      }).catch(() => {});
+    }
   } catch {}
 }
 
@@ -450,37 +690,19 @@ export function getCachedAssets() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        let hasChanges = false;
-        const cleaned = parsed.map(a => {
+        return parsed.map(a => {
           const rawUri = a.rawMetadataURI || a.description || '';
           const meta = parseMetadataURI(rawUri);
           const cleanTitle = meta.name || (rawUri && !rawUri.startsWith('data:') ? rawUri : `Asset #${a.tokenId}`);
 
-          // Correct any invalid or stale transaction hash with verified Amoy hash
-          let txHash = a.txHash;
-          const verified = VERIFIED_AMOY_MINT_TXS[String(a.tokenId)];
-          if (!txHash || txHash.length !== 66 || !txHash.startsWith('0x') || txHash.startsWith('0x3a8f9b')) {
-            if (verified) {
-              txHash = verified.txHash;
-              hasChanges = true;
-            }
-          }
-
           return {
             ...a,
-            txHash,
-            blockNumber: a.blockNumber && a.blockNumber > 40000000 ? a.blockNumber : (verified?.blockNumber || 47817000),
+            txHash: (a.txHash && a.txHash.length === 66 && a.txHash.startsWith('0x') && !a.txHash.startsWith('0x3a8f9b')) ? a.txHash : null,
+            blockNumber: a.blockNumber || 47820000,
             description: cleanTitle,
             thumbnailUrl: a.thumbnailUrl || resolveThumbnail(a.tokenId, rawUri, a.assetClass),
           };
         });
-
-        if (hasChanges) {
-          try {
-            localStorage.setItem(CONFIRMED_ASSETS_KEY, JSON.stringify(cleaned));
-          } catch {}
-        }
-        return cleaned;
       }
     }
   } catch {}
@@ -627,6 +849,12 @@ export async function fetchAssets() {
   const onChainAssets = [];
   const seenIds = new Set();
 
+  // Dynamically fetch cloud audit events to associate authentic transaction hashes
+  let cloudAudit = [];
+  try {
+    cloudAudit = await fetchAuditEventsFromCloud();
+  } catch {}
+
   // Use only public JSON-RPC for read-only queries — never touch MetaMask for reads
   const providersToTry = [];
   for (const rpc of AMOY_RPCS) {
@@ -652,6 +880,10 @@ export async function fetchAssets() {
           const cleanTitle = parsedMeta.name || (rec.metadataURI && !rec.metadataURI.startsWith('data:') ? rec.metadataURI : `Asset #${tokenId}`);
           const thumb = resolveThumbnail(tokenId, rec.metadataURI, rec.assetClass);
 
+          const mintEvt = cloudAudit.find(e => e && e.event_name === 'AssetMinted' && String(e.decoded?.tokenId) === tokenId)
+            || cached.find(c => String(c.tokenId) === tokenId && c.txHash);
+          const txHash = mintEvt ? (mintEvt.tx_hash || mintEvt.txHash) : null;
+
           onChainAssets.push({
             tokenId,
             description: cleanTitle,
@@ -661,6 +893,7 @@ export async function fetchAssets() {
             ownerName: owner.toLowerCase(),
             createdAt: Number(rec.mintedAt) ? Number(rec.mintedAt) * 1000 : Date.now(),
             thumbnailUrl: thumb,
+            txHash: txHash && txHash.length === 66 && txHash.startsWith('0x') ? txHash : null,
             onChain: true,
           });
         } catch (tokenErr) {
@@ -1023,22 +1256,27 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
       }
 
       // STEP 6: Fire the mint transaction — dynamic gas estimation with safety margin
-      if (onProgress) onProgress('Confirm in MetaMask popup...');
+      if (onProgress) onProgress('Estimating Polygon Amoy gas fees...');
+      const gasFees = await getAmoyGasOverrides(browserProvider);
+      let txOverrides = {
+        ...gasFees,
+        gasLimit: 3_000_000n,
+      };
 
-      let txOverrides = {};
       try {
         const est = await nft.mint.estimateGas(
           targetAddress,
           didHash,
           assetClass || 'Defence Equipment',
-          finalMetadataURI
+          finalMetadataURI,
+          { ...gasFees }
         );
         txOverrides.gasLimit = (est * 130n) / 100n;
       } catch (estErr) {
-        console.warn('[mint] Gas estimation failed, falling back to 3M limit:', estErr);
-        txOverrides.gasLimit = 3_000_000n;
+        console.warn('[mint] Gas estimation fallback:', estErr);
       }
 
+      if (onProgress) onProgress('Confirm in MetaMask popup...');
       const tx = await nft.mint(
         targetAddress,
         didHash,
@@ -1079,6 +1317,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
 
         // Record real on-chain event in audit trail
         recordAuditEvent({
+          id: `mint_${tokenId}`,
           event_name: 'AssetMinted',
           contract_addr: nftAddr,
           block_number: receipt.blockNumber,
@@ -1206,11 +1445,16 @@ export async function transferAssetOnChain({ tokenId, toAddress }) {
     throw new Error(`You do not own Token #${tokenId}. Current on-chain owner is ${owner.slice(0, 6)}...${owner.slice(-4)}`);
   }
 
-  // Execute standard ERC-721 transferFrom with explicit gas
-  const tx = await nft.transferFrom(currentAddress, target, BigInt(tokenId), { gasLimit: 120000 });
+  // Execute standard ERC-721 transferFrom with explicit gas overrides
+  const gasFees = await getAmoyGasOverrides(browserProvider);
+  const tx = await nft.transferFrom(currentAddress, target, BigInt(tokenId), {
+    gasLimit: 150000n,
+    ...gasFees,
+  });
   const receipt = await tx.wait();
 
   recordAuditEvent({
+    id: `transfer_${tokenId}_${receipt.blockNumber}`,
     event_name: 'AssetTransferred',
     contract_addr: nftAddr,
     block_number: receipt.blockNumber,
@@ -1466,14 +1710,31 @@ export async function fetchAuditEvents(query = {}) {
     } catch {}
   }
 
-  // 1. Sanitize and purge any invalid or dummy events from localStorage
+  // 1. Fetch dynamic on-chain events from Supabase S3 Cloud Storage
+  let cloudEvents = [];
+  try {
+    cloudEvents = await fetchAuditEventsFromCloud();
+  } catch {}
+
+  // 2. Fetch from backend gateway if online
+  let backendEvents = [];
+  if (isBackendConfigured()) {
+    try {
+      const params = new URLSearchParams(query).toString();
+      const data = await apiFetch(`/audit/events${params ? `?${params}` : ''}`);
+      if (data && Array.isArray(data.events) && data.events.length > 0) {
+        backendEvents = data.events;
+      }
+    } catch {}
+  }
+
+  // 3. Read real actions recorded locally in localStorage (filtered for genuine 66-character on-chain hashes)
   let localEvents = [];
   try {
     const raw = localStorage.getItem('sc_audit_events');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        // Keep ONLY events with genuine 66-character on-chain transaction hashes
         localEvents = parsed.filter(e => 
           e &&
           typeof e.tx_hash === 'string' &&
@@ -1481,11 +1742,7 @@ export async function fetchAuditEvents(query = {}) {
           e.tx_hash.startsWith('0x') &&
           !e.tx_hash.startsWith('0x3a8f9b') &&
           !e.tx_hash.startsWith('0x7b2f9a') &&
-          !e.tx_hash.startsWith('0x192a83') &&
-          e.id !== 'mint_1' &&
-          e.id !== 'mint_2' &&
-          e.id !== 'mint_3' &&
-          e.id !== 'mint_4'
+          !e.tx_hash.startsWith('0x192a83')
         );
         if (localEvents.length !== parsed.length) {
           localStorage.setItem('sc_audit_events', JSON.stringify(localEvents));
@@ -1494,52 +1751,13 @@ export async function fetchAuditEvents(query = {}) {
     }
   } catch {}
 
-  // 2. Synthesize verified on-chain records from confirmed assets and documents
-  const onChainSynthesized = [];
+  // 4. Synthesize confirmed on-chain assets and documents
+  const localSynthesized = [];
 
   const assets = getCachedAssets();
-  const assetMap = new Map();
   for (const a of assets) {
-    assetMap.set(String(a.tokenId), a);
-  }
-
-  // Always include confirmed on-chain mints for tokens 1-4 with exact Amoy tx hashes
-  for (const [tokenIdStr, verified] of Object.entries(VERIFIED_AMOY_MINT_TXS)) {
-    const existing = assetMap.get(tokenIdStr);
-    const validTx = (existing?.txHash && existing.txHash.length === 66 && existing.txHash.startsWith('0x') && !existing.txHash.startsWith('0x3a8f9b'))
-      ? existing.txHash
-      : verified.txHash;
-    const blockNum = (existing?.blockNumber && existing.blockNumber > 40000000)
-      ? existing.blockNumber
-      : verified.blockNumber;
-    const actor = (existing?.ownerName && existing.ownerName.startsWith('0x'))
-      ? existing.ownerName
-      : verified.actor;
-    const description = existing?.description || verified.name;
-    const assetClass = existing?.assetClass || 'Defence Equipment';
-
-    onChainSynthesized.push({
-      id: `mint_${tokenIdStr}`,
-      event_name: 'AssetMinted',
-      contract_addr: CONTRACT_ADDRESSES.EnterpriseAssetNFT,
-      block_number: blockNum,
-      tx_hash: validTx,
-      created_at: verified.createdAt,
-      decoded: {
-        tokenId: tokenIdStr,
-        name: description,
-        assetClass: assetClass,
-        account: actor,
-        target: `Token #${tokenIdStr} (${description})`,
-      }
-    });
-  }
-
-  // Any newly minted tokens (>4) from cached assets
-  for (const a of assets) {
-    if (VERIFIED_AMOY_MINT_TXS[String(a.tokenId)]) continue;
     if (a.txHash && a.txHash.length === 66 && a.txHash.startsWith('0x') && !a.txHash.startsWith('0x3a8f9b')) {
-      onChainSynthesized.push({
+      localSynthesized.push({
         id: `mint_${a.tokenId}`,
         event_name: 'AssetMinted',
         contract_addr: CONTRACT_ADDRESSES.EnterpriseAssetNFT,
@@ -1565,9 +1783,8 @@ export async function fetchAuditEvents(query = {}) {
   } catch {}
 
   for (const d of docs) {
-    // Only synthesize genuine on-chain document anchor transactions
     if (d.txHash && d.txHash.length === 66 && d.txHash.startsWith('0x') && !d.txHash.startsWith('0x7b2f9a')) {
-      onChainSynthesized.push({
+      localSynthesized.push({
         id: `anchor_${d.documentId}`,
         event_name: 'MerkleRootAnchored',
         contract_addr: CONTRACT_ADDRESSES.DocumentAnchorRegistry,
@@ -1585,14 +1802,28 @@ export async function fetchAuditEvents(query = {}) {
     }
   }
 
-  // Merge unique by id: onChainSynthesized takes strict priority to guarantee correct verified hashes
+  // Merge unique by id: Cloud persistent events first, then backend, then local
   const mergedMap = new Map();
-  for (const e of onChainSynthesized) {
-    mergedMap.set(e.id, e);
+  for (const e of cloudEvents) {
+    if (e && e.tx_hash && e.tx_hash.length === 66 && e.tx_hash.startsWith('0x')) {
+      mergedMap.set(e.id || e.tx_hash, e);
+    }
+  }
+  for (const e of backendEvents) {
+    if (e && e.tx_hash && e.tx_hash.length === 66 && e.tx_hash.startsWith('0x')) {
+      if (!mergedMap.has(e.id || e.tx_hash)) {
+        mergedMap.set(e.id || e.tx_hash, e);
+      }
+    }
+  }
+  for (const e of localSynthesized) {
+    if (!mergedMap.has(e.id)) {
+      mergedMap.set(e.id, e);
+    }
   }
   for (const e of localEvents) {
-    if (!mergedMap.has(e.id) && e.tx_hash && e.tx_hash.length === 66 && e.tx_hash.startsWith('0x')) {
-      mergedMap.set(e.id, e);
+    if (!mergedMap.has(e.id || e.tx_hash) && e.tx_hash && e.tx_hash.length === 66 && e.tx_hash.startsWith('0x')) {
+      mergedMap.set(e.id || e.tx_hash, e);
     }
   }
 

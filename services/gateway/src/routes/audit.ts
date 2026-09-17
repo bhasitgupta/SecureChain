@@ -36,6 +36,27 @@ export const auditRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
     return { events: res.rows };
   });
 
+  // POST /api/audit/record - Dynamically record on-chain event
+  fastify.post<{
+    Body: { event_name: string; contract_addr?: string; block_number?: number; tx_hash: string; decoded?: any };
+  }>('/record', async (req, reply) => {
+    const { event_name, contract_addr, block_number, tx_hash, decoded } = req.body;
+    if (!event_name || !tx_hash) {
+      return reply.code(400).send({ error: 'event_name and tx_hash are required' });
+    }
+    try {
+      await query(
+        `INSERT INTO audit_events (contract_addr, event_name, block_number, tx_hash, log_index, decoded)
+         VALUES ($1, $2, $3, $4, 0, $5)
+         ON CONFLICT DO NOTHING`,
+        [contract_addr || '', event_name, block_number || 0, tx_hash, JSON.stringify(decoded || {})]
+      );
+      return { success: true };
+    } catch {
+      return { success: true, savedToDb: false };
+    }
+  });
+
   // GET /api/stats - Dashboard summary metrics
   fastify.get('/stats', async (_req, _reply) => {
     const [identitiesRes, docsRes, versionsRes, batchesRes, assetsRes] = await Promise.all([
