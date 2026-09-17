@@ -76,15 +76,6 @@ export function AuthProvider({ children }) {
             saveSession({ ...session, role: resRole });
           }
         });
-        fetchRolesForAddress(session.wallet)
-          .then((data) => {
-            const derived = data?.assignedRole || deriveRoleFromRoleMap(data?.roles);
-            if (derived && derived !== 'USER') {
-              setRole(derived);
-              saveSession({ ...session, role: derived });
-            }
-          })
-          .catch(() => {});
       }
 
       if (session.authMethod === 'wallet' && window.ethereum) {
@@ -196,16 +187,7 @@ export function AuthProvider({ children }) {
 
     // Authoritative role resolution from on-chain, cloud store, and defaults
     const isPrimaryAdmin = address.toLowerCase() === PRIMARY_ADMIN_ADDRESS.toLowerCase();
-    let authoritativeRole = isPrimaryAdmin ? 'ADMIN' : await resolveAuthoritativeRole(address);
-    if (!isPrimaryAdmin) {
-      try {
-        const roleData = await fetchRolesForAddress(address);
-        const derived = roleData?.assignedRole || deriveRoleFromRoleMap(roleData?.roles);
-        if (derived && derived !== 'USER') {
-          authoritativeRole = derived;
-        }
-      } catch {}
-    }
+    const authoritativeRole = isPrimaryAdmin ? 'ADMIN' : await resolveAuthoritativeRole(address);
 
     setWallet(address);
     setRole(authoritativeRole);

@@ -17,9 +17,10 @@ export const ROLE_HASHES = {
 
 // High-speed, verified Polygon Amoy RPC endpoints with automatic failover
 export const AMOY_RPCS = [
+  'https://rpc-amoy.polygon.technology',
+  'https://polygon-amoy.drpc.org',
   'https://polygon-amoy-bor-rpc.publicnode.com',
   NETWORK.rpcUrl,
-  'https://polygon-amoy.drpc.org',
 ].filter((url, idx, arr) => url && arr.indexOf(url) === idx);
 
 // Primary Governance Admin Address (Main user wallet - permanently authoritative ADMIN)
@@ -29,7 +30,6 @@ export const PRIMARY_ADMIN_ADDRESS = '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c
 export const DEFAULT_ROLES = {
   '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
   '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
-  '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a': 'MANAGER',
 };
 
 const DEFAULT_REQUESTS = [];
@@ -168,6 +168,10 @@ export function getRoleForWallet(address) {
   }
 }
 
+// Fast in-memory cache to prevent duplicate RPC calls during rapid UI operations
+const onChainRoleCache = new Map();
+const ON_CHAIN_CACHE_TTL = 5000; // 5 seconds TTL
+
 /**
  * Query on-chain IAM contract on Polygon Amoy for authoritative role using fast timeout and multi-RPC fallback
  */
@@ -179,12 +183,73 @@ export async function checkOnChainRole(address) {
     return 'ADMIN';
   }
 
-  const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+  // 1. Check in-memory fast cache
+  const cached = onChainRoleCache.get(normalized);
+  if (cached && (Date.now() - cached.timestamp < ON_CHAIN_CACHE_TTL)) {
+    return cached.role;
+  }
 
-  // 1. Try gateway backend role endpoint first (has direct node connection + DB cache, sub-100ms)
+  const iamAddr = CONTRACT_ADDRESSES.IdentityAndAccessManager;
+  if (!iamAddr || !iamAddr.startsWith('0x') || iamAddr === '—') {
+    return getRoleForWallet(normalized);
+  }
+
+  const abi = ['function hasRole(bytes32 role, address acct) view returns (bool)'];
+
+  // Fast path 1: Browser wallet provider (sub-100ms response if wallet connected)
+  if (typeof window !== 'undefined' && window.ethereum) {
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const iam = new ethers.Contract(iamAddr, abi, provider);
+      const [isAdmin, isManager, isAuditor] = await Promise.race([
+        Promise.all([
+          iam.hasRole(ROLE_HASHES.ADMIN, normalized),
+          iam.hasRole(ROLE_HASHES.MANAGER, normalized),
+          iam.hasRole(ROLE_HASHES.AUDITOR, normalized),
+        ]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Browser provider timeout')), 900))
+      ]);
+
+      const result = isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : isAuditor ? 'AUDITOR' : 'USER';
+      onChainRoleCache.set(normalized, { role: result, timestamp: Date.now() });
+      return result;
+    } catch {
+      // Fall through to parallel public RPC race
+    }
+  }
+
+  // Fast path 2: Parallel RPC race across verified Polygon Amoy nodes (<800ms)
+  const net = ethers.Network.from(80002);
+  try {
+    const rpcPromises = AMOY_RPCS.map(async (rpc) => {
+      const fetchReq = new ethers.FetchRequest(rpc);
+      fetchReq.timeout = 1500;
+      const provider = new ethers.JsonRpcProvider(fetchReq, net, { staticNetwork: net, batchMaxCount: 1 });
+      const iam = new ethers.Contract(iamAddr, abi, provider);
+
+      const [isAdmin, isManager, isAuditor] = await Promise.race([
+        Promise.all([
+          iam.hasRole(ROLE_HASHES.ADMIN, normalized),
+          iam.hasRole(ROLE_HASHES.MANAGER, normalized),
+          iam.hasRole(ROLE_HASHES.AUDITOR, normalized),
+        ]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('RPC query timeout')), 1500))
+      ]);
+
+      return isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : isAuditor ? 'AUDITOR' : 'USER';
+    });
+
+    const fastRole = await Promise.any(rpcPromises);
+    onChainRoleCache.set(normalized, { role: fastRole, timestamp: Date.now() });
+    return fastRole;
+  } catch (err) {
+    // All RPCs failed/offline, fall through
+  }
+
+  // Fast path 3: Quick gateway backend check (400ms max)
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
+    const timer = setTimeout(() => controller.abort(), 400);
     const apiData = await fetchRolesForAddress(normalized);
     clearTimeout(timer);
 
@@ -197,42 +262,7 @@ export async function checkOnChainRole(address) {
       if (apiData.roles.AUDITOR_ROLE) return 'AUDITOR';
       if (apiData.roles.USER_ROLE) return 'USER';
     }
-  } catch {
-    // Fallback to direct on-chain RPC query
-  }
-
-  if (!iamAddr || !iamAddr.startsWith('0x') || iamAddr === '—') {
-    return getRoleForWallet(normalized);
-  }
-
-  const abi = ['function hasRole(bytes32 role, address acct) view returns (bool)'];
-  const net = ethers.Network.from(80002);
-
-  for (const rpc of AMOY_RPCS) {
-    try {
-      const fetchReq = new ethers.FetchRequest(rpc);
-      fetchReq.timeout = 2500; // Fast 2.5 second timeout per RPC
-      const provider = new ethers.JsonRpcProvider(fetchReq, net, { staticNetwork: net, batchMaxCount: 1 });
-      const iam = new ethers.Contract(iamAddr, abi, provider);
-
-      const [isAdmin, isManager, isAuditor] = await Promise.race([
-        Promise.all([
-          iam.hasRole(ROLE_HASHES.ADMIN, normalized),
-          iam.hasRole(ROLE_HASHES.MANAGER, normalized),
-          iam.hasRole(ROLE_HASHES.AUDITOR, normalized),
-        ]),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), 2500))
-      ]);
-
-      if (isAdmin) return 'ADMIN';
-      if (isManager) return 'MANAGER';
-      if (isAuditor) return 'AUDITOR';
-
-      return 'USER';
-    } catch (err) {
-      continue;
-    }
-  }
+  } catch {}
 
   return getRoleForWallet(normalized);
 }
@@ -248,29 +278,39 @@ export async function resolveAuthoritativeRole(address) {
     return 'ADMIN';
   }
 
-  // 1. Sync latest roles from cloud registry first
-  try {
-    await syncCloudRoles();
-  } catch (e) {}
+  // 1. Sync latest roles from cloud registry in background (non-blocking)
+  syncCloudRoles().catch(() => {});
 
-  // 2. Query on-chain IAM contract for verified role
+  // 2. Query on-chain IAM contract for verified role (authoritative source of truth)
   try {
     const onChainRole = await checkOnChainRole(normalized);
-    if (onChainRole && onChainRole !== 'USER') {
+    if (onChainRole) {
       const local = getAllWalletRoles();
-      local[normalized] = onChainRole;
-      saveStoredRoles(local);
-      return onChainRole;
+      if (onChainRole === 'USER') {
+        // Explicitly revoked on chain: purge privileged store and mark revoked
+        delete local[normalized];
+        saveStoredRoles(local);
+        const revoked = getRevokedRoles();
+        revoked.add(normalized);
+        saveRevokedRoles(revoked);
+        return 'USER';
+      } else {
+        // Privileged role confirmed on chain
+        local[normalized] = onChainRole;
+        saveStoredRoles(local);
+        const revoked = getRevokedRoles();
+        if (revoked.has(normalized)) {
+          revoked.delete(normalized);
+          saveRevokedRoles(revoked);
+        }
+        return onChainRole;
+      }
     }
   } catch (e) {}
 
-  // 3. Fallback to assigned role from cloud & local store (never overwrite with USER)
+  // 3. Fallback only if on-chain failed to respond
   const assigned = getRoleForWallet(normalized);
-  if (assigned && assigned !== 'USER') {
-    return assigned;
-  }
-
-  return 'USER';
+  return assigned || 'USER';
 }
 
 /**
