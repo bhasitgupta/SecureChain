@@ -252,7 +252,6 @@ const ShapeBlur = ({
       material.dispose();
       materialRef.current = null;
       renderer.dispose();
-      renderer.forceContextLoss();
     };
   }, [variation]);
 

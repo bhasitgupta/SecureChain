@@ -97,36 +97,43 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
-  // Listen for admin role updates dispatched in real time or across storage
+  // Listen for admin role updates dispatched in real time
   useEffect(() => {
-    const syncCurrentRole = () => {
-      if (wallet) {
-        resolveAuthoritativeRole(wallet).then(effRole => {
-          setRole(effRole);
-          const session = loadSession();
-          if (session) saveSession({ ...session, role: effRole });
-        });
+    let isSyncing = false;
+    const syncCurrentRole = async () => {
+      if (!wallet || isSyncing) return;
+      isSyncing = true;
+      try {
+        const effRole = await resolveAuthoritativeRole(wallet);
+        setRole(effRole);
+        const session = loadSession();
+        if (session && session.role !== effRole) {
+          saveSession({ ...session, role: effRole });
+        }
+      } finally {
+        isSyncing = false;
       }
     };
 
     const handleRoleUpdated = (e) => {
       const { address: updatedAddr, role: newRole } = e.detail || {};
       if (wallet && updatedAddr && wallet.toLowerCase() === updatedAddr.toLowerCase()) {
-        setRole(newRole);
-        const session = loadSession();
-        if (session) {
-          saveSession({ ...session, role: newRole });
+        if (newRole) {
+          setRole(newRole);
+          const session = loadSession();
+          if (session && session.role !== newRole) {
+            saveSession({ ...session, role: newRole });
+          }
         }
-      } else {
+      } else if (!updatedAddr) {
+        // Broadcast update with entire map: check current wallet without infinite loop
         syncCurrentRole();
       }
     };
 
     window.addEventListener('sc_role_updated', handleRoleUpdated);
-    window.addEventListener('storage', syncCurrentRole);
     return () => {
       window.removeEventListener('sc_role_updated', handleRoleUpdated);
-      window.removeEventListener('storage', syncCurrentRole);
     };
   }, [wallet]);
 

@@ -294,6 +294,7 @@ export function initRealtimeLiveSync() {
   // 3. Cloud registry background poller (cache-busted, non-blocking)
   let lastAuditCount = -1;
   let lastDocCount = -1;
+  let lastIdCount = -1;
 
   const pollCloudSync = async () => {
     if (document.hidden) return;

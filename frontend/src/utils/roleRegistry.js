@@ -62,16 +62,27 @@ function getStoredRoles() {
 
 function saveStoredRoles(roles) {
   const sanitized = sanitizeRoleMap(roles);
-  Object.keys(memoryStore).forEach(k => delete memoryStore[k]);
+  const payload = JSON.stringify(sanitized);
+
+  // Guard against redundant writes and infinite event loops
+  if (memoryStore._lastPayload === payload) {
+    return;
+  }
+  memoryStore._lastPayload = payload;
+
+  Object.keys(memoryStore).forEach(k => {
+    if (k !== '_lastPayload') delete memoryStore[k];
+  });
   Object.assign(memoryStore, sanitized);
 
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const payload = JSON.stringify(sanitized);
-      window.localStorage.setItem(ROLE_REGISTRY_KEY, payload);
-      window.sessionStorage?.setItem(ROLE_REGISTRY_KEY, payload);
-      window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { roles: sanitized } }));
-      window.dispatchEvent(new Event('storage'));
+      const stored = window.localStorage.getItem(ROLE_REGISTRY_KEY);
+      if (stored !== payload) {
+        window.localStorage.setItem(ROLE_REGISTRY_KEY, payload);
+        window.sessionStorage?.setItem(ROLE_REGISTRY_KEY, payload);
+        window.dispatchEvent(new CustomEvent('sc_role_updated', { detail: { roles: sanitized } }));
+      }
     }
   } catch (e) {}
 }
@@ -278,26 +289,29 @@ export async function resolveAuthoritativeRole(address) {
     return 'ADMIN';
   }
 
-  // 1. Sync latest roles from cloud registry in background (non-blocking)
-  syncCloudRoles().catch(() => {});
-
-  // 2. Query on-chain IAM contract for verified role (authoritative source of truth)
+  // 1. Query on-chain IAM contract for verified role (authoritative source of truth)
   try {
     const onChainRole = await checkOnChainRole(normalized);
     if (onChainRole) {
       const local = getAllWalletRoles();
       if (onChainRole === 'USER') {
         // Explicitly revoked on chain: purge privileged store and mark revoked
-        delete local[normalized];
-        saveStoredRoles(local);
+        if (local[normalized]) {
+          delete local[normalized];
+          saveStoredRoles(local);
+        }
         const revoked = getRevokedRoles();
-        revoked.add(normalized);
-        saveRevokedRoles(revoked);
+        if (!revoked.has(normalized)) {
+          revoked.add(normalized);
+          saveRevokedRoles(revoked);
+        }
         return 'USER';
       } else {
         // Privileged role confirmed on chain
-        local[normalized] = onChainRole;
-        saveStoredRoles(local);
+        if (local[normalized] !== onChainRole) {
+          local[normalized] = onChainRole;
+          saveStoredRoles(local);
+        }
         const revoked = getRevokedRoles();
         if (revoked.has(normalized)) {
           revoked.delete(normalized);
@@ -308,7 +322,7 @@ export async function resolveAuthoritativeRole(address) {
     }
   } catch (e) {}
 
-  // 3. Fallback only if on-chain failed to respond
+  // 2. Fallback only if on-chain failed to respond
   const assigned = getRoleForWallet(normalized);
   return assigned || 'USER';
 }

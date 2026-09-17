@@ -21,15 +21,21 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     camera.position.z = 80;
 
-    const renderer = new THREE.WebGLRenderer({ 
-      alpha: true, 
-      antialias: !isLowEnd && (window.devicePixelRatio || 1) < 2,
-      powerPreference: 'high-performance',
-      precision: isLowEnd ? 'mediump' : 'highp',
-    });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
-    container.appendChild(renderer.domElement);
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ 
+        alpha: true, 
+        antialias: !isLowEnd && (window.devicePixelRatio || 1) < 2,
+        powerPreference: 'default',
+        precision: isLowEnd ? 'mediump' : 'highp',
+      });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+      container.appendChild(renderer.domElement);
+    } catch (e) {
+      console.warn('[ThreeBackground] WebGL disabled or failed:', e);
+      return;
+    }
 
     // 2. Cryptographic Geometric Node (Outer Wireframe Icosahedron)
     const icoSize = isMobile ? 13 : 18;
@@ -267,10 +273,10 @@ export default function ThreeBackground({ opacity = 0.65 }) {
       window.removeEventListener('blur', onWindowBlur);
       window.removeEventListener('focus', onWindowFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      if (container && renderer.domElement) {
+      if (container && renderer && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
-      renderer.dispose();
+      if (renderer) renderer.dispose();
       icoGeom.dispose();
       icoMat.dispose();
       innerGeom.dispose();
