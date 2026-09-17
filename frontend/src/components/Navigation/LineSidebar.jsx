@@ -50,6 +50,7 @@ const LineSidebar = ({
   const targetsRef = useRef([]);
   const currentRef = useRef([]);
   const rafRef = useRef(null);
+  const pointerRafRef = useRef(null);
   const lastRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(controlledActive ?? defaultActive);
   const activeRef = useRef(activeIndex);
@@ -116,31 +117,40 @@ const LineSidebar = ({
     rafRef.current = requestAnimationFrame(runFrame);
   }, [runFrame]);
 
-  // Scroll-proof pointer tracking using live bounding rects to prevent misalignments when scrolled
+  // Hardware-throttled pointer tracking: capped at display refresh rate to save CPU on low-end laptops
   const handlePointerMove = useCallback(
     e => {
-      const list = listRef.current;
-      if (!list) return;
-      const rect = list.getBoundingClientRect();
-      const pointerY = e.clientY - rect.top;
-      const ease = FALLOFF_CURVES[falloff] ?? FALLOFF_CURVES.linear;
-      const itemsList = itemRefs.current;
-      const len = items.length;
+      const clientY = e.clientY;
+      if (pointerRafRef.current != null) return;
+      pointerRafRef.current = requestAnimationFrame(() => {
+        pointerRafRef.current = null;
+        const list = listRef.current;
+        if (!list) return;
+        const rect = list.getBoundingClientRect();
+        const pointerY = clientY - rect.top;
+        const ease = FALLOFF_CURVES[falloff] ?? FALLOFF_CURVES.linear;
+        const itemsList = itemRefs.current;
+        const len = items.length;
 
-      for (let i = 0; i < len; i++) {
-        const el = itemsList[i];
-        if (!el) continue;
-        const itemRect = el.getBoundingClientRect();
-        const itemCenter = itemRect.top + itemRect.height / 2 - rect.top;
-        const distance = Math.abs(pointerY - itemCenter);
-        targetsRef.current[i] = ease(Math.max(0, 1 - distance / proximityRadius));
-      }
-      startLoop();
+        const centers = centersRef.current;
+        for (let i = 0; i < len; i++) {
+          const el = itemsList[i];
+          if (!el) continue;
+          const itemCenter = centers[i] ?? (el.offsetTop + el.offsetHeight / 2);
+          const distance = Math.abs(pointerY - itemCenter);
+          targetsRef.current[i] = ease(Math.max(0, 1 - distance / proximityRadius));
+        }
+        startLoop();
+      });
     },
     [falloff, items.length, proximityRadius, startLoop]
   );
 
   const handlePointerLeave = useCallback(() => {
+    if (pointerRafRef.current != null) {
+      cancelAnimationFrame(pointerRafRef.current);
+      pointerRafRef.current = null;
+    }
     targetsRef.current = targetsRef.current.map(() => 0);
     startLoop();
   }, [startLoop]);
@@ -189,6 +199,7 @@ const LineSidebar = ({
               itemRefs.current[index] = el;
             }}
             className="line-sidebar__item"
+            title={label}
             aria-current={activeIndex === index ? 'true' : undefined}
             onClick={() => handleClick(index, label)}
           >

@@ -30,6 +30,13 @@ export default function Recovery() {
 
   useEffect(() => {
     loadProviders();
+    const handleUpdate = () => loadProviders();
+    window.addEventListener('sc_recovery_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('sc_recovery_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   const showToast = (msg, isErr = false) => {

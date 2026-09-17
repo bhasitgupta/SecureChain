@@ -273,7 +273,7 @@
 /* ── Responsive Mobile Drawer (1024px & below) ── */
 @media (max-width: 1024px) {
   .sidebar {
-    width: 280px !important;
+    width: min(295px, 86vw) !important;
     transform: translateX(-100%);
     box-shadow: none;
     z-index: 1000;

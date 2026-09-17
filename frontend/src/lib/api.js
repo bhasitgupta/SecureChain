@@ -50,6 +50,263 @@ export async function apiFetch(endpoint, options = {}) {
   return res.json();
 }
 
+// ── Universal Real-Time Event & Cross-Device Sync Bus ──
+let liveSyncBroadcastChannel = null;
+try {
+  if (typeof BroadcastChannel !== 'undefined') {
+    liveSyncBroadcastChannel = new BroadcastChannel('sc_realtime_bus');
+  }
+} catch {}
+
+export function broadcastLiveEvent(type, payload = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent(type, { detail: payload }));
+  } catch {}
+
+  try {
+    if (liveSyncBroadcastChannel) {
+      liveSyncBroadcastChannel.postMessage({ type, payload, timestamp: Date.now() });
+    }
+  } catch {}
+
+  try {
+    localStorage.setItem('sc_live_sync_ping', JSON.stringify({ type, payload, _t: Date.now() }));
+  } catch {}
+}
+
+// ── Dynamic Cloud Audit & Document Registries (Supabase S3 Web Crypto SigV4) ──
+export const CLOUD_AUDIT_REGISTRY_URL = 'https://zslaxuawwjieykhginxe.supabase.co/storage/v1/object/public/asset-thumbnails/audit-registry.json';
+export const CLOUD_DOCUMENTS_REGISTRY_URL = 'https://zslaxuawwjieykhginxe.supabase.co/storage/v1/object/public/asset-thumbnails/documents-registry.json';
+
+const S3_BUCKET = 'asset-thumbnails';
+const S3_REGION = 'ap-southeast-1';
+const S3_ACCESS_KEY = '5d9ea48d7120c3166091eb897edd0d5d';
+const S3_SECRET_KEY = 'f542e77d366cd648a5d3140fe5d6800d76f2cad86f2d63206830fde148a34ed3';
+const S3_HOST = 'zslaxuawwjieykhginxe.supabase.co';
+
+async function s3PutJson(objectKey, data) {
+  const jsonStr = JSON.stringify(data, null, 2);
+  const buffer = new TextEncoder().encode(jsonStr);
+  const mimeType = 'application/json';
+  const path = `/storage/v1/s3/${S3_BUCKET}/${objectKey}`;
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.substring(0, 8);
+
+  const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
+  const payloadHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const canonicalHeaders =
+    `content-type:${mimeType}\n` +
+    `host:${S3_HOST}\n` +
+    `x-amz-content-sha256:${payloadHash}\n` +
+    `x-amz-date:${amzDate}\n`;
+  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
+
+  const canonicalRequest = ['PUT', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const canonicalReqHashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalRequest));
+  const canonicalReqHash = Array.from(new Uint8Array(canonicalReqHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const algorithm = 'AWS4-HMAC-SHA256';
+  const credentialScope = `${dateStamp}/${S3_REGION}/s3/aws4_request`;
+  const stringToSign = [algorithm, amzDate, credentialScope, canonicalReqHash].join('\n');
+
+  async function hmac(keyData, msgStr) {
+    const key = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msgStr));
+    return new Uint8Array(sig);
+  }
+
+  const kDate = await hmac(new TextEncoder().encode('AWS4' + S3_SECRET_KEY), dateStamp);
+  const kRegion = await hmac(kDate, S3_REGION);
+  const kService = await hmac(kRegion, 's3');
+  const kSigning = await hmac(kService, 'aws4_request');
+  const finalSigBuf = await hmac(kSigning, stringToSign);
+  const signature = Array.from(finalSigBuf).map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const authHeader = `${algorithm} Credential=${S3_ACCESS_KEY}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return fetch(`https://${S3_HOST}${path}`, {
+    method: 'PUT',
+    headers: {
+      Host: S3_HOST,
+      'Content-Type': mimeType,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': payloadHash,
+      Authorization: authHeader,
+    },
+    body: buffer,
+  });
+}
+
+export async function fetchAuditEventsFromCloud() {
+  try {
+    const res = await fetch(`${CLOUD_AUDIT_REGISTRY_URL}?_t=${Date.now()}`, {
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch (err) {
+    console.warn('[AuditCloud] fetch failed:', err);
+  }
+  return [];
+}
+
+export async function syncAuditEventToCloud(entry) {
+  if (!entry || !entry.tx_hash || entry.tx_hash.length !== 66 || !entry.tx_hash.startsWith('0x')) {
+    return false;
+  }
+  try {
+    const current = await fetchAuditEventsFromCloud();
+    const map = new Map();
+    for (const e of current) {
+      if (e && e.tx_hash && e.tx_hash.length === 66) {
+        map.set(e.id || e.tx_hash, e);
+      }
+    }
+    map.set(entry.id || entry.tx_hash, entry);
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const res = await s3PutJson('audit-registry.json', list);
+    return res.ok;
+  } catch (err) {
+    console.warn('[AuditCloud] sync failed:', err);
+    return false;
+  }
+}
+
+export async function fetchDocumentsFromCloud() {
+  try {
+    const res = await fetch(`${CLOUD_DOCUMENTS_REGISTRY_URL}?_t=${Date.now()}`, {
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    }
+  } catch (err) {
+    console.warn('[DocCloud] fetch failed:', err);
+  }
+  return [];
+}
+
+export async function syncDocumentToCloud(newDoc) {
+  if (!newDoc || !newDoc.documentId) return false;
+  try {
+    const current = await fetchDocumentsFromCloud();
+    const map = new Map();
+    for (const d of current) {
+      if (d && (d.documentId || d.document_id)) {
+        map.set(d.documentId || d.document_id, d);
+      }
+    }
+    map.set(newDoc.documentId, newDoc);
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const res = await s3PutJson('documents-registry.json', list);
+    return res.ok;
+  } catch (err) {
+    console.warn('[DocCloud] sync failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Continuous high-performance live synchronization bus.
+ * Coordinates cross-tab and cross-browser synchronization so friends & peers
+ * never need to hard-refresh or press F5 to see new assets, documents, or audit events.
+ */
+let isLiveSyncActive = false;
+
+export function initRealtimeLiveSync() {
+  if (typeof window === 'undefined' || isLiveSyncActive) return () => {};
+  isLiveSyncActive = true;
+
+  // 1. Cross-tab BroadcastChannel listener
+  if (liveSyncBroadcastChannel) {
+    liveSyncBroadcastChannel.onmessage = (event) => {
+      const data = event.data;
+      if (data?.type) {
+        window.dispatchEvent(new CustomEvent(data.type, { detail: data.payload }));
+      }
+    };
+  }
+
+  // 2. Storage event fallback for older browsers
+  const handleStorage = (e) => {
+    if (e.key === 'sc_live_sync_ping' && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (parsed?.type) {
+          window.dispatchEvent(new CustomEvent(parsed.type, { detail: parsed.payload }));
+        }
+      } catch {}
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  // 3. Cloud registry background poller (cache-busted, non-blocking)
+  let lastAuditCount = -1;
+  let lastDocCount = -1;
+
+  const pollCloudSync = async () => {
+    if (document.hidden) return;
+
+    try {
+      const cloudEvents = await fetchAuditEventsFromCloud();
+      if (Array.isArray(cloudEvents)) {
+        if (lastAuditCount !== -1 && cloudEvents.length !== lastAuditCount) {
+          window.dispatchEvent(new CustomEvent('sc_audit_updated', { detail: { count: cloudEvents.length } }));
+          window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { source: 'cloud' } }));
+        }
+        lastAuditCount = cloudEvents.length;
+      }
+    } catch {}
+
+    try {
+      const cloudDocs = await fetchDocumentsFromCloud();
+      if (Array.isArray(cloudDocs)) {
+        if (lastDocCount !== -1 && cloudDocs.length !== lastDocCount) {
+          window.dispatchEvent(new CustomEvent('sc_documents_updated', { detail: { count: cloudDocs.length } }));
+        }
+        lastDocCount = cloudDocs.length;
+      }
+    } catch {}
+  };
+
+  // Instant sync trigger when user refocuses tab (e.g. after testing in friend's browser)
+  const handleFocus = () => {
+    if (!document.hidden) {
+      pollCloudSync();
+    }
+  };
+  window.addEventListener('focus', handleFocus);
+  document.addEventListener('visibilitychange', handleFocus);
+
+  // Lightweight 4.5s heartbeat
+  const timer = setInterval(() => {
+    if (!document.hidden) {
+      pollCloudSync();
+    }
+  }, 4500);
+
+  // Initial immediate probe
+  pollCloudSync();
+
+  return () => {
+    isLiveSyncActive = false;
+    clearInterval(timer);
+    window.removeEventListener('storage', handleStorage);
+    window.removeEventListener('focus', handleFocus);
+    document.removeEventListener('visibilitychange', handleFocus);
+  };
+}
+
 // ── Auth ──
 export async function walletLogin(message, signature, address) {
   return apiFetch('/auth/login', {
@@ -100,6 +357,11 @@ export async function fetchDashboardStats() {
 
 // ── Documents ──
 export async function fetchDocuments() {
+  let cloudDocs = [];
+  try {
+    cloudDocs = await fetchDocumentsFromCloud();
+  } catch {}
+
   let backendDocs = [];
   try {
     const data = await apiFetch('/documents');
@@ -112,8 +374,24 @@ export async function fetchDocuments() {
     if (raw) localDocs = JSON.parse(raw);
   } catch {}
 
-  const merged = [...localDocs];
-  const seenIds = new Set(localDocs.map(d => d.documentId || d.document_id));
+  const merged = [];
+  const seenIds = new Set();
+
+  for (const cd of cloudDocs) {
+    const id = cd.documentId || cd.document_id;
+    if (id && !seenIds.has(id)) {
+      merged.push(cd);
+      seenIds.add(id);
+    }
+  }
+
+  for (const ld of localDocs) {
+    const id = ld.documentId || ld.document_id;
+    if (id && !seenIds.has(id)) {
+      merged.push(ld);
+      seenIds.add(id);
+    }
+  }
 
   for (const bd of backendDocs) {
     const id = bd.documentId || bd.document_id;
@@ -442,8 +720,11 @@ export async function uploadDocument(title, file, onProgress) {
   stored.unshift(newDoc);
   try {
     localStorage.setItem('sc_documents', JSON.stringify(stored));
-    window.dispatchEvent(new CustomEvent('sc_documents_updated', { detail: { document: newDoc } }));
+    broadcastLiveEvent('sc_documents_updated', { document: newDoc });
   } catch {}
+
+  // Sync to Cloud S3 registry for instant visibility on all other laptops/browsers
+  syncDocumentToCloud(newDoc).catch(() => {});
 
   return { 
     success: true, 
@@ -668,110 +949,6 @@ export const ANCHOR_ABI = [
   'event MerkleRootAnchored(bytes32 indexed batchId, bytes32 indexed merkleRoot, uint256 leafCount, address indexed anchorer)'
 ];
 
-// ── Dynamic Cloud Audit Registry (Supabase S3 Persistent Storage) ──
-const CLOUD_AUDIT_REGISTRY_URL = 'https://zslaxuawwjieykhginxe.supabase.co/storage/v1/object/public/asset-thumbnails/audit-registry.json';
-
-export async function fetchAuditEventsFromCloud() {
-  try {
-    const res = await fetch(`${CLOUD_AUDIT_REGISTRY_URL}?t=${Date.now()}`, {
-      cache: 'no-store',
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return data;
-      }
-    }
-  } catch (err) {
-    console.warn('[AuditCloud] fetch failed:', err);
-  }
-  return [];
-}
-
-export async function syncAuditEventToCloud(entry) {
-  if (!entry || !entry.tx_hash || entry.tx_hash.length !== 66 || !entry.tx_hash.startsWith('0x')) {
-    return false;
-  }
-
-  try {
-    const current = await fetchAuditEventsFromCloud();
-    const map = new Map();
-    for (const e of current) {
-      if (e && e.tx_hash && e.tx_hash.length === 66) {
-        map.set(e.id || e.tx_hash, e);
-      }
-    }
-    map.set(entry.id || entry.tx_hash, entry);
-
-    const list = Array.from(map.values());
-    list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    const jsonStr = JSON.stringify(list, null, 2);
-    const buffer = new TextEncoder().encode(jsonStr);
-    const bucket = 'asset-thumbnails';
-    const objectKey = 'audit-registry.json';
-    const mimeType = 'application/json';
-    const region = 'ap-southeast-1';
-    const accessKey = '5d9ea48d7120c3166091eb897edd0d5d';
-    const secretKey = 'f542e77d366cd648a5d3140fe5d6800d76f2cad86f2d63206830fde148a34ed3';
-    const host = 'zslaxuawwjieykhginxe.supabase.co';
-    const path = `/storage/v1/s3/${bucket}/${objectKey}`;
-
-    const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
-    const dateStamp = amzDate.substring(0, 8);
-
-    const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
-    const payloadHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-    const canonicalHeaders =
-      `content-type:${mimeType}\n` +
-      `host:${host}\n` +
-      `x-amz-content-sha256:${payloadHash}\n` +
-      `x-amz-date:${amzDate}\n`;
-    const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
-
-    const canonicalRequest = ['PUT', path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
-    const canonicalReqHashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalRequest));
-    const canonicalReqHash = Array.from(new Uint8Array(canonicalReqHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-    const algorithm = 'AWS4-HMAC-SHA256';
-    const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
-    const stringToSign = [algorithm, amzDate, credentialScope, canonicalReqHash].join('\n');
-
-    async function hmac(keyData, msgStr) {
-      const key = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-      const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(msgStr));
-      return new Uint8Array(sig);
-    }
-
-    const kDate = await hmac(new TextEncoder().encode('AWS4' + secretKey), dateStamp);
-    const kRegion = await hmac(kDate, region);
-    const kService = await hmac(kRegion, 's3');
-    const kSigning = await hmac(kService, 'aws4_request');
-    const finalSigBuf = await hmac(kSigning, stringToSign);
-    const signature = Array.from(finalSigBuf).map(b => b.toString(16).padStart(2, '0')).join('');
-
-    const authHeader = `${algorithm} Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-    await fetch(`https://${host}${path}`, {
-      method: 'PUT',
-      headers: {
-        Host: host,
-        'Content-Type': mimeType,
-        'x-amz-date': amzDate,
-        'x-amz-content-sha256': payloadHash,
-        Authorization: authHeader,
-      },
-      body: buffer,
-    });
-    return true;
-  } catch (err) {
-    console.warn('[AuditCloud] sync failed:', err);
-    return false;
-  }
-}
-
 const AUDIT_EVENTS_KEY = 'sc_audit_events';
 
 export function recordAuditEvent(evt) {
@@ -795,7 +972,7 @@ export function recordAuditEvent(evt) {
     };
     stored.unshift(entry);
     localStorage.setItem(AUDIT_EVENTS_KEY, JSON.stringify(stored.slice(0, 100)));
-    window.dispatchEvent(new CustomEvent('sc_audit_updated', { detail: entry }));
+    broadcastLiveEvent('sc_audit_updated', entry);
 
     // Dynamically persist to Supabase S3 bucket in background for all users
     syncAuditEventToCloud(entry).catch(() => {});
@@ -1025,7 +1202,7 @@ export function saveAssetThumbnail(tokenId, dataUrlOrBlob) {
     const updated = cached.map(a => String(a.tokenId) === String(tokenId) ? { ...a, thumbnailUrl: dataUrlOrBlob } : a);
     saveCachedAssets(updated);
 
-    window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { tokenId, thumbnailUrl: dataUrlOrBlob } }));
+    broadcastLiveEvent('sc_assets_updated', { tokenId, thumbnailUrl: dataUrlOrBlob });
     return true;
   } catch (e) {
     console.warn('Failed to save thumbnail:', e);
@@ -1582,7 +1759,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
         success: true,
       };
 
-      window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: result }));
+      broadcastLiveEvent('sc_assets_updated', result);
       return result;
     } catch (metaMaskErr) {
       if (metaMaskErr.code === 'ACTION_REJECTED' || metaMaskErr.message?.includes('user rejected')) {
@@ -1614,7 +1791,7 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
   }
 
   const data = await res.json();
-  window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: data }));
+  broadcastLiveEvent('sc_assets_updated', data);
   return data;
 }
 
@@ -1695,7 +1872,7 @@ export async function transferAssetOnChain({ tokenId, toAddress }) {
     }
   });
 
-  window.dispatchEvent(new CustomEvent('sc_assets_updated', { detail: { tokenId, newOwner: target, txHash: tx.hash } }));
+  broadcastLiveEvent('sc_assets_updated', { tokenId, newOwner: target, txHash: tx.hash });
   return {
     success: true,
     tokenId,
@@ -1774,7 +1951,7 @@ export async function registerIdentity(account, subjectId) {
   stored.unshift(newIdentity);
   try {
     localStorage.setItem('sc_identities', JSON.stringify(stored));
-    window.dispatchEvent(new CustomEvent('sc_identities_updated', { detail: { identity: newIdentity } }));
+    broadcastLiveEvent('sc_identities_updated', { identity: newIdentity });
   } catch {}
 
   return { success: true, did, txHash: newIdentity.txHash };
@@ -2203,6 +2380,7 @@ export async function registerRecoveryProviderAPI(providerAddress, providerType 
     });
   }
 
+  broadcastLiveEvent('sc_recovery_updated', { provider: newProvider });
   return { success: true, txHash: onChainTxHash, provider: newProvider };
 }
 

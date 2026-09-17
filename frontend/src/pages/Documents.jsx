@@ -74,6 +74,13 @@ export default function Documents() {
 
   useEffect(() => {
     loadDocs();
+    const handleUpdate = () => loadDocs();
+    window.addEventListener('sc_documents_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('sc_documents_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
   }, []);
 
   const handleFileChange = (e) => {

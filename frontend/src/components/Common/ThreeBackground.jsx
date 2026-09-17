@@ -8,7 +8,12 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     const container = containerRef.current;
     if (!container) return;
 
-    // 1. Scene & Camera setup
+    // 1. Device capability detection & Scene setup
+    const isMobile = window.innerWidth < 768;
+    const isLowEnd = isMobile || 
+      (typeof navigator !== 'undefined' && navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+      (typeof navigator !== 'undefined' && navigator.deviceMemory && navigator.deviceMemory <= 4);
+
     const scene = new THREE.Scene();
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
@@ -18,15 +23,15 @@ export default function ThreeBackground({ opacity = 0.65 }) {
 
     const renderer = new THREE.WebGLRenderer({ 
       alpha: true, 
-      antialias: window.devicePixelRatio < 2, // antialias on standard res, native crisp on retina
+      antialias: !isLowEnd && (window.devicePixelRatio || 1) < 2,
       powerPreference: 'high-performance',
+      precision: isLowEnd ? 'mediump' : 'highp',
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
     container.appendChild(renderer.domElement);
 
     // 2. Cryptographic Geometric Node (Outer Wireframe Icosahedron)
-    const isMobile = window.innerWidth < 768;
     const icoSize = isMobile ? 13 : 18;
     const icoGeom = new THREE.IcosahedronGeometry(icoSize, 1);
     const icoMat = new THREE.MeshBasicMaterial({
@@ -49,8 +54,8 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     const innerCore = new THREE.Mesh(innerGeom, innerMat);
     scene.add(innerCore);
 
-    // 3. Floating Network Particle Constellation (Optimized count for screen size)
-    const particleCount = isMobile ? 32 : (window.innerWidth < 1200 ? 50 : 75);
+    // 3. Floating Network Particle Constellation (Optimized count for screen size & GPU tier)
+    const particleCount = isLowEnd ? (isMobile ? 22 : 32) : (window.innerWidth < 1200 ? 45 : 65);
     const positions = new Float32Array(particleCount * 3);
     const velocities = [];
 
@@ -152,12 +157,14 @@ export default function ThreeBackground({ opacity = 0.65 }) {
     window.addEventListener('blur', onWindowBlur);
     window.addEventListener('focus', onWindowFocus);
 
+    let frameCount = 0;
     const animate = () => {
       if (!isTabVisible || document.hidden) {
         stopLoop();
         return;
       }
       animId = requestAnimationFrame(animate);
+      frameCount++;
 
       // Smooth mouse lerp
       currentMouseX += (targetMouseX - currentMouseX) * 0.045;
@@ -176,8 +183,6 @@ export default function ThreeBackground({ opacity = 0.65 }) {
       // Update particle positions
       const posAttr = particleGeom.attributes.position;
       const posArray = posAttr.array;
-      let lineIndex = 0;
-      const linePosArray = lineGeom.attributes.position.array;
 
       for (let i = 0; i < particleCount; i++) {
         posArray[i * 3] += velocities[i].x;
@@ -188,38 +193,58 @@ export default function ThreeBackground({ opacity = 0.65 }) {
         if (Math.abs(posArray[i * 3]) > 60) velocities[i].x *= -1;
         if (Math.abs(posArray[i * 3 + 1]) > 50) velocities[i].y *= -1;
         if (Math.abs(posArray[i * 3 + 2]) > 35) velocities[i].z *= -1;
+      }
+      posAttr.needsUpdate = true;
 
-        // Form network lines between close particles
+      // Line distance check (interlaced on low-end hardware for silky 60fps)
+      if (!isLowEnd || frameCount % 2 === 0) {
+        let lineIndex = 0;
+        const linePosArray = lineGeom.attributes.position.array;
         const distLimit = isMobile ? 18 : 22;
-        for (let j = i + 1; j < particleCount; j++) {
-          if (lineIndex >= maxLineVertices * 3 - 6) break;
+        const distLimitSq = distLimit * distLimit;
 
-          const dx = posArray[i * 3] - posArray[j * 3];
-          const dy = posArray[i * 3 + 1] - posArray[j * 3 + 1];
-          const dz = posArray[i * 3 + 2] - posArray[j * 3 + 2];
-          const distSq = dx * dx + dy * dy + dz * dz;
+        for (let i = 0; i < particleCount; i++) {
+          for (let j = i + 1; j < particleCount; j++) {
+            if (lineIndex >= maxLineVertices * 3 - 6) break;
 
-          if (distSq < distLimit * distLimit) {
-            linePosArray[lineIndex++] = posArray[i * 3];
-            linePosArray[lineIndex++] = posArray[i * 3 + 1];
-            linePosArray[lineIndex++] = posArray[i * 3 + 2];
-            linePosArray[lineIndex++] = posArray[j * 3];
-            linePosArray[lineIndex++] = posArray[j * 3 + 1];
-            linePosArray[lineIndex++] = posArray[j * 3 + 2];
+            const dx = posArray[i * 3] - posArray[j * 3];
+            const dy = posArray[i * 3 + 1] - posArray[j * 3 + 1];
+            const dz = posArray[i * 3 + 2] - posArray[j * 3 + 2];
+            const distSq = dx * dx + dy * dy + dz * dz;
+
+            if (distSq < distLimitSq) {
+              linePosArray[lineIndex++] = posArray[i * 3];
+              linePosArray[lineIndex++] = posArray[i * 3 + 1];
+              linePosArray[lineIndex++] = posArray[i * 3 + 2];
+              linePosArray[lineIndex++] = posArray[j * 3];
+              linePosArray[lineIndex++] = posArray[j * 3 + 1];
+              linePosArray[lineIndex++] = posArray[j * 3 + 2];
+            }
           }
         }
-      }
 
-      posAttr.needsUpdate = true;
-      lineGeom.attributes.position.needsUpdate = true;
-      lineGeom.setDrawRange(0, lineIndex / 3);
+        lineGeom.attributes.position.needsUpdate = true;
+        lineGeom.setDrawRange(0, lineIndex / 3);
+      }
 
       renderer.render(scene, camera);
     };
 
     startLoop();
 
-    // 6. Resize Handler (Passive & Debounced)
+    // 6. WebGL Context Loss & Restoration Safety
+    const canvas = renderer.domElement;
+    const handleContextLost = (e) => {
+      e.preventDefault();
+      stopLoop();
+    };
+    const handleContextRestored = () => {
+      startLoop();
+    };
+    canvas.addEventListener('webglcontextlost', handleContextLost);
+    canvas.addEventListener('webglcontextrestored', handleContextRestored);
+
+    // 7. Resize Handler (Passive & Debounced)
     let resizeTimer;
     const handleResize = () => {
       clearTimeout(resizeTimer);
@@ -229,7 +254,7 @@ export default function ThreeBackground({ opacity = 0.65 }) {
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
         renderer.setSize(w, h);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setPixelRatio(isLowEnd ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
       }, 100);
     };
     window.addEventListener('resize', handleResize, { passive: true });
