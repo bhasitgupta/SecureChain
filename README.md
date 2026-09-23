@@ -14,9 +14,10 @@
   <img src="https://img.shields.io/badge/Frontend-React_19_Vite-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/Storage-MinIO_S3-C72C48?style=flat-square&logo=minio&logoColor=white" alt="MinIO">
   <img src="https://img.shields.io/badge/Queue-Redis_BullMQ-DC382D?style=flat-square&logo=redis&logoColor=white" alt="Redis">
-  <img src="https://img.shields.io/badge/Infra-Docker_Compose-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/License-MIT-00E676?style=flat-square" alt="MIT License">
-  <img src="https://img.shields.io/badge/Security-Policy_Active-DC2626?style=flat-square&logo=shield" alt="Security Policy">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-00E676?style=flat-square" alt="MIT License"></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy_Active-DC2626?style=flat-square&logo=shield" alt="Security Policy"></a>
+  <a href="CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/Contributor_Covenant-2.1-4baaaa.svg?style=flat-square" alt="Code of Conduct"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="Contributing"></a>
 </p>
 
 <p align="center">
@@ -212,6 +213,8 @@ SIH-26125/
     <a href="https://github.com/bhasitgupta/SIH-26125"><img src="https://img.shields.io/badge/GitHub-bhasitgupta%2FSIH--26125-000000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
     <a href="mailto:bhasitgupta@gmail.com"><img src="https://img.shields.io/badge/Contact-Email-3B82F6?style=for-the-badge&logo=gmail&logoColor=white" alt="Email"></a>
     <a href="SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-DC2626?style=for-the-badge&logo=shield&logoColor=white" alt="Security Policy"></a>
+    <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributing-Guide-10B981?style=for-the-badge&logo=gitbook&logoColor=white" alt="Contributing"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge" alt="License"></a>
   </p>
 
   <p>
