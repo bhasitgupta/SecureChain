@@ -5,7 +5,7 @@
 # ⚡ SECURECHAIN
 ### *Next-Generation Zero-Knowledge Enterprise Identity, Verifiable Asset Ownership & Document Provenance Engine*
 
-[![Typing SVG](https://readme-typing-svg.herokuapp.com?font=Fira+Code&pause=1000&color=DC2626&center=true&vCenter=true&width=650&lines=Zero-Knowledge+Enterprise+Identity;Cryptographic+Document+Provenance;Immutable+Merkle+Roots+on+Polygon+Amoy;ERC-721+Monitored+Asset+NFTs;Cryptographic+RBAC+Governance)](https://github.com/bhasitgupta/SIH-26125)
+[![Typing SVG](https://readme-typing-svg.herokuapp.com?font=Fira+Code&pause=1000&color=DC2626&center=true&vCenter=true&width=650&lines=Zero-Knowledge+Enterprise+Identity;Cryptographic+Document+Provenance;Immutable+Merkle+Roots+on+Polygon+Amoy;ERC-721+Monitored+Asset+NFTs;Cryptographic+RBAC+Governance)](https://github.com/bhasitgupta/SecureChain)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Network-Polygon_Amoy_80002-8247E5?style=flat-square&logo=polygon&logoColor=white" alt="Polygon Amoy">
@@ -120,8 +120,8 @@ Every document anchored in SecureChain undergoes an uncompromising mathematical 
 
 ### 2. Clone & Install
 ```bash
-git clone https://github.com/bhasitgupta/SIH-26125.git
-cd SIH-26125
+git clone https://github.com/bhasitgupta/SecureChain.git
+cd SecureChain
 
 # Install dependencies across all workspaces
 npm install
@@ -210,7 +210,7 @@ securechain/
   <h3>⚡ SECURECHAIN — Immutably Anchored. Forever Provable.</h3>
 
   <p>
-    <a href="https://github.com/bhasitgupta/SIH-26125"><img src="https://img.shields.io/badge/GitHub-bhasitgupta%2FSIH--26125-000000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
+    <a href="https://github.com/bhasitgupta/SecureChain"><img src="https://img.shields.io/badge/GitHub-bhasitgupta%2FSecureChain-000000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
     <a href="mailto:bhasitgupta@gmail.com"><img src="https://img.shields.io/badge/Contact-Email-3B82F6?style=for-the-badge&logo=gmail&logoColor=white" alt="Email"></a>
     <a href="SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-DC2626?style=for-the-badge&logo=shield&logoColor=white" alt="Security Policy"></a>
     <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributing-Guide-10B981?style=for-the-badge&logo=gitbook&logoColor=white" alt="Contributing"></a>

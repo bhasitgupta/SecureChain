@@ -1720,6 +1720,62 @@ export async function getAmoyProvider() {
 }
 
 
+/**
+ * Checks whether a given wallet address is involved in the lifecycle of an NFT asset.
+ * A wallet is considered involved if:
+ * 1. It is the current on-chain owner (ownerName or owner).
+ * 2. It is the original minter or creator (minter, creator, createdBy).
+ * 3. It was the sender or recipient in a transfer (to, from, targetAddress).
+ * 4. It is recorded in the asset's involvedWallets audit array.
+ * 5. Any recorded on-chain audit event (AssetMinted, AssetTransferred, AssetAllocated) references this wallet.
+ */
+export function isWalletInvolvedInAsset(asset, walletAddress) {
+  if (!asset || !walletAddress) return false;
+  const target = String(walletAddress).toLowerCase().trim();
+  if (!target || !target.startsWith('0x')) return false;
+
+  // 1. Current owner
+  if (asset.ownerName && String(asset.ownerName).toLowerCase().trim() === target) return true;
+  if (asset.owner && String(asset.owner).toLowerCase().trim() === target) return true;
+
+  // 2. Direct participant fields
+  if (asset.minter && String(asset.minter).toLowerCase().trim() === target) return true;
+  if (asset.creator && String(asset.creator).toLowerCase().trim() === target) return true;
+  if (asset.createdBy && String(asset.createdBy).toLowerCase().trim() === target) return true;
+  if (asset.to && String(asset.to).toLowerCase().trim() === target) return true;
+  if (asset.from && String(asset.from).toLowerCase().trim() === target) return true;
+  if (asset.targetAddress && String(asset.targetAddress).toLowerCase().trim() === target) return true;
+
+  // 3. Explicit involvedWallets array
+  if (Array.isArray(asset.involvedWallets)) {
+    for (const w of asset.involvedWallets) {
+      if (w && String(w).toLowerCase().trim() === target) return true;
+    }
+  }
+
+  // 4. Audit events cross-check (local storage)
+  try {
+    const rawEvents = localStorage.getItem('sc_audit_events');
+    if (rawEvents) {
+      const events = JSON.parse(rawEvents);
+      for (const ev of events) {
+        if (!ev || !ev.decoded) continue;
+        if (String(ev.decoded.tokenId) === String(asset.tokenId)) {
+          const dec = ev.decoded;
+          if (dec.account && String(dec.account).toLowerCase().trim() === target) return true;
+          if (dec.from && String(dec.from).toLowerCase().trim() === target) return true;
+          if (dec.to && String(dec.to).toLowerCase().trim() === target) return true;
+          if (dec.actor && String(dec.actor).toLowerCase().trim() === target) return true;
+          if (dec.minter && String(dec.minter).toLowerCase().trim() === target) return true;
+          if (ev.caller_address && String(ev.caller_address).toLowerCase().trim() === target) return true;
+        }
+      }
+    }
+  } catch {}
+
+  return false;
+}
+
 // ── Assets (High-Speed Parallel On-Chain Resolution + Cloud Audit Sync) ──
 export async function fetchAssets() {
   const cached = getCachedAssets();
@@ -1730,6 +1786,64 @@ export async function fetchAssets() {
   try {
     cloudAudit = await fetchAuditEventsFromCloud();
   } catch {}
+
+  // Helper to accumulate involved wallets per tokenId
+  const involvedMap = new Map();
+  const registerInvolved = (tokenId, addr) => {
+    if (!tokenId || !addr || typeof addr !== 'string') return;
+    const clean = addr.toLowerCase().trim();
+    if (!clean.startsWith('0x') || clean === '0x0000000000000000000000000000000000000000') return;
+    const tid = String(tokenId);
+    if (!involvedMap.has(tid)) involvedMap.set(tid, new Set());
+    involvedMap.get(tid).add(clean);
+  };
+
+  // Collect addresses from cloud audit
+  for (const e of cloudAudit) {
+    if (e && e.decoded?.tokenId) {
+      const tid = String(e.decoded.tokenId);
+      registerInvolved(tid, e.decoded.account);
+      registerInvolved(tid, e.decoded.from);
+      registerInvolved(tid, e.decoded.to);
+      registerInvolved(tid, e.decoded.actor);
+      registerInvolved(tid, e.decoded.minter);
+      registerInvolved(tid, e.caller_address);
+      registerInvolved(tid, e.user_address);
+    }
+  }
+
+  // Collect addresses from local audit events
+  try {
+    const rawLocal = localStorage.getItem('sc_audit_events');
+    if (rawLocal) {
+      const localEvts = JSON.parse(rawLocal);
+      for (const e of localEvts) {
+        if (e && e.decoded?.tokenId) {
+          const tid = String(e.decoded.tokenId);
+          registerInvolved(tid, e.decoded.account);
+          registerInvolved(tid, e.decoded.from);
+          registerInvolved(tid, e.decoded.to);
+          registerInvolved(tid, e.decoded.actor);
+          registerInvolved(tid, e.decoded.minter);
+          registerInvolved(tid, e.caller_address);
+          registerInvolved(tid, e.user_address);
+        }
+      }
+    }
+  } catch {}
+
+  // Collect addresses from cached assets
+  for (const c of cached) {
+    const tid = String(c.tokenId);
+    registerInvolved(tid, c.ownerName);
+    registerInvolved(tid, c.owner);
+    registerInvolved(tid, c.minter);
+    registerInvolved(tid, c.to);
+    registerInvolved(tid, c.from);
+    if (Array.isArray(c.involvedWallets)) {
+      for (const w of c.involvedWallets) registerInvolved(tid, w);
+    }
+  }
 
   // 2. Fast parallel on-chain verification using fast Bor public node
   const onChainAssets = [];
@@ -1776,6 +1890,7 @@ export async function fetchAssets() {
       if (res.status === 'fulfilled' && res.value && res.value.rec) {
         const { id, owner, rec } = res.value;
         const tokenId = String(id);
+        registerInvolved(tokenId, owner);
         const parsedMeta = parseMetadataURI(rec.metadataURI);
         const cleanTitle = parsedMeta.name || (rec.metadataURI && !rec.metadataURI.startsWith('data:') ? rec.metadataURI : `Asset #${tokenId}`);
         const thumb = resolveThumbnail(tokenId, rec.metadataURI, rec.assetClass);
@@ -1808,6 +1923,7 @@ export async function fetchAssets() {
   for (const e of cloudAudit) {
     if (e && e.event_name === 'AssetMinted' && e.decoded?.tokenId) {
       const tid = String(e.decoded.tokenId);
+      registerInvolved(tid, e.decoded.account);
       mergedMap.set(tid, {
         tokenId: tid,
         description: e.decoded.name || `Asset #${tid}`,
@@ -1837,6 +1953,13 @@ export async function fetchAssets() {
       txHash: a.txHash || existing.txHash || null,
       thumbnailUrl: a.thumbnailUrl || existing.thumbnailUrl || null,
     });
+  }
+
+  // Attach aggregated involvedWallets list to each asset
+  for (const [tid, asset] of mergedMap.entries()) {
+    if (asset.ownerName) registerInvolved(tid, asset.ownerName);
+    const set = involvedMap.get(tid);
+    asset.involvedWallets = set ? Array.from(set) : (asset.ownerName ? [asset.ownerName.toLowerCase()] : []);
   }
 
   const allAssets = Array.from(mergedMap.values());
@@ -2236,9 +2359,35 @@ export async function mintAsset({ to, assetClass, metadataURI, file, imageUrl, o
             name: metadataURI || 'Enterprise Digital Asset',
             assetClass: assetClass || 'Defence Equipment',
             account: targetAddress,
+            minter: currentAddress,
             target: `Token #${tokenId} (${metadataURI || 'Enterprise Digital Asset'})`,
           }
         });
+
+        // Enrich local cache with involvedWallets immediately
+        try {
+          const currentCached = getCachedAssets();
+          const targetIndex = currentCached.findIndex(c => String(c.tokenId) === String(tokenId));
+          const involved = Array.from(new Set([targetAddress.toLowerCase(), currentAddress.toLowerCase()]));
+          if (targetIndex >= 0) {
+            currentCached[targetIndex].involvedWallets = involved;
+            currentCached[targetIndex].ownerName = targetAddress.toLowerCase();
+          } else {
+            currentCached.unshift({
+              tokenId: String(tokenId),
+              description: metadataURI || `Asset #${tokenId}`,
+              assetClass: assetClass || 'Defence Equipment',
+              assetStatus: 'Active',
+              ownerName: targetAddress.toLowerCase(),
+              createdAt: Date.now(),
+              thumbnailUrl: onChainImageUrl || '',
+              txHash: tx.hash,
+              onChain: true,
+              involvedWallets: involved,
+            });
+          }
+          saveCachedAssets(currentCached);
+        } catch {}
       }
 
       // Notify backend (fire-and-forget, non-blocking)
@@ -2376,6 +2525,21 @@ export async function transferAssetOnChain({ tokenId, toAddress }) {
       account: currentAddress,
     }
   });
+
+  // Update cached asset owner & involvedWallets
+  try {
+    const currentCached = getCachedAssets();
+    const match = currentCached.find(c => String(c.tokenId) === String(tokenId));
+    if (match) {
+      match.ownerName = target.toLowerCase();
+      match.assetStatus = 'Transferred';
+      const existingInvolved = new Set(match.involvedWallets || []);
+      existingInvolved.add(currentAddress.toLowerCase());
+      existingInvolved.add(target.toLowerCase());
+      match.involvedWallets = Array.from(existingInvolved);
+      saveCachedAssets(currentCached);
+    }
+  } catch {}
 
   broadcastLiveEvent('sc_assets_updated', { tokenId, newOwner: target, txHash: tx.hash });
   return {

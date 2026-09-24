@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, getStatusColor } from '../utils/formatters';
-import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, compressImage, saveAssetThumbnail, parseMetadataURI } from '../lib/api';
+import { fetchAssets, getCachedAssets, mintAsset, transferAssetOnChain, compressImage, saveAssetThumbnail, parseMetadataURI, isWalletInvolvedInAsset } from '../lib/api';
 import { CONTRACT_ADDRESSES } from '../utils/constants';
 import { Gem, Plus, Search, ExternalLink, AlertCircle, CheckCircle2, Loader2, Send, Wallet, Copy, Check, RefreshCw, ImageOff, ZoomIn, X, Maximize2 } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
@@ -228,11 +228,22 @@ export default function Assets() {
     }
   };
 
-  const myAssets = assets.filter(a =>
+  // Privileged roles can inspect all assets globally: AUDITOR, ADMIN, MANAGER
+  const isPrivilegedRole = ['ADMIN', 'MANAGER', 'AUDITOR'].includes(role) || (role && role !== 'USER');
+
+  // Strict Scoping:
+  // - Privileged roles (AUDITOR, ADMIN, MANAGER) see ALL enterprise NFTs.
+  // - Standard USER role can ONLY see NFTs where their connected wallet address is involved
+  //   (as owner, minter, recipient, or transfer participant).
+  const accessibleAssets = isPrivilegedRole
+    ? assets
+    : (wallet ? assets.filter(a => isWalletInvolvedInAsset(a, wallet)) : []);
+
+  const myAssets = accessibleAssets.filter(a =>
     wallet && typeof a.ownerName === 'string' && a.ownerName.toLowerCase() === wallet.toLowerCase()
   );
 
-  const displayedList = activeTab === 'my' ? myAssets : assets;
+  const displayedList = activeTab === 'my' ? myAssets : accessibleAssets;
 
   const filtered = displayedList.filter(a =>
     (a.description || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -248,7 +259,18 @@ export default function Assets() {
       <div className="page-header">
         <div className="flex items-center justify-between">
           <div>
-            <h1>Digital Assets</h1>
+            <div className="flex items-center gap-sm">
+              <h1>Digital Assets</h1>
+              {isPrivilegedRole ? (
+                <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '0.72rem', padding: '3px 8px' }}>
+                  {role} Full Visibility
+                </span>
+              ) : (
+                <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', border: '1px solid rgba(59, 130, 246, 0.3)', fontSize: '0.72rem', padding: '3px 8px' }}>
+                  Involved Wallet Scope
+                </span>
+              )}
+            </div>
             <p>ERC-721 enterprise asset registry on Polygon Amoy ({nftContractAddr.slice(0, 6)}...{nftContractAddr.slice(-4)})</p>
           </div>
           <div className="flex gap-sm">
@@ -277,13 +299,13 @@ export default function Assets() {
               className={`btn btn-sm ${activeTab === 'all' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setActiveTab('all')}
             >
-              All Assets ({assets.length})
+              {isPrivilegedRole ? `All Assets (${assets.length})` : `My Involved Assets (${accessibleAssets.length})`}
             </button>
             <button 
               className={`btn btn-sm ${activeTab === 'my' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setActiveTab('my')}
             >
-              <Wallet size={14} /> My Wallet Assets ({myAssets.length})
+              <Wallet size={14} /> {isPrivilegedRole ? `My Wallet Assets (${myAssets.length})` : `Currently Owned (${myAssets.length})`}
             </button>
           </div>
 
@@ -309,11 +331,24 @@ export default function Assets() {
       ) : filtered.length === 0 ? (
         <div className="card">
           <EmptyState 
-            icon={Gem} 
-            message={activeTab === 'my' ? "No assets in your wallet" : "No digital assets"} 
-            description={activeTab === 'my' 
-              ? (wallet ? `No NFTs are currently owned by ${wallet.slice(0,6)}...${wallet.slice(-4)}. Mint one or have someone transfer one to this address.` : "Connect your wallet to view your owned NFTs.") 
-              : (canMint ? "Mint your first on-chain NFT asset to begin tracking." : "No digital assets allocated to your account.")
+            icon={!wallet && !isPrivilegedRole ? Wallet : Gem} 
+            message={
+              !isPrivilegedRole && !wallet
+                ? "Wallet Not Connected"
+                : activeTab === 'my' 
+                  ? "No assets in your wallet" 
+                  : isPrivilegedRole 
+                    ? "No digital assets" 
+                    : "No involved digital assets"
+            } 
+            description={
+              !isPrivilegedRole && !wallet
+                ? "Connect your Web3 wallet to access your assigned digital assets. Only involved wallet addresses can view protected enterprise NFTs."
+                : activeTab === 'my' 
+                  ? (wallet ? `No NFTs are currently owned by ${wallet.slice(0,6)}...${wallet.slice(-4)}. Mint one or have someone transfer one to this address.` : "Connect your wallet to view your owned NFTs.") 
+                  : isPrivilegedRole
+                    ? (canMint ? "Mint your first on-chain NFT asset to begin tracking." : "No digital assets allocated to your account.")
+                    : `No digital assets involving wallet ${wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : ''}. Only involved wallet addresses (owner, minter, or transfer participant) are permitted to view restricted enterprise NFTs.`
             } 
           />
         </div>
@@ -329,10 +364,16 @@ export default function Assets() {
                     <span className="font-mono">#{asset.tokenId}</span>
                   </div>
                   <div className="flex items-center gap-xs">
-                    {isMyAsset && (
+                    {isMyAsset ? (
                       <span className="badge badge-primary font-mono" style={{ background: '#2563EB', color: '#fff', fontSize: '0.72rem', padding: '2px 6px' }}>
                         YOU (Owner)
                       </span>
+                    ) : (
+                      !isPrivilegedRole && (
+                        <span className="badge font-mono" style={{ background: '#0F766E', color: '#fff', fontSize: '0.72rem', padding: '2px 6px' }}>
+                          Involved
+                        </span>
+                      )
                     )}
                     <span className={`badge badge-${getStatusColor(asset.assetStatus)}`}>{asset.assetStatus}</span>
                   </div>

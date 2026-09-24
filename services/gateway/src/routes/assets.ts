@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import jwt from 'jsonwebtoken';
 import { formatDidPkh, hashDid } from '@securechain/common';
 import { config } from '../config.js';
 import { query } from '../db.js';
@@ -8,7 +9,23 @@ import { requireOnChainRole } from '../auth.js';
 
 export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   // GET /api/assets - list assets from DB cache / chain
-  fastify.get('/', async (_req, _reply) => {
+  fastify.get<{ Querystring: { wallet?: string; role?: string } }>('/', async (req, _reply) => {
+    let callerWallet = req.query?.wallet?.toLowerCase()?.trim();
+    let callerRole = req.query?.role?.toUpperCase()?.trim();
+
+    // Check JWT cookie or bearer token if present
+    const token =
+      req.cookies.auth_token ||
+      req.headers.authorization?.replace(/^Bearer\s+/i, '');
+
+    if (token) {
+      try {
+        const decoded: any = jwt.verify(token, config.jwtSecret);
+        if (decoded?.address) callerWallet = decoded.address.toLowerCase().trim();
+        if (decoded?.role) callerRole = String(decoded.role).toUpperCase().trim();
+      } catch {}
+    }
+
     const res = await query(
       `SELECT a.token_id, a.minio_key, a.mime_type, a.created_at
        FROM asset_thumbnails a
@@ -34,6 +51,15 @@ export const assetRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) 
           }
         } catch (e) {
           // ignore chain read errors for local cache items
+        }
+      }
+
+      // If user is standard USER role, strictly restrict visibility to involved wallet
+      const isPrivileged = callerRole === 'ADMIN' || callerRole === 'MANAGER' || callerRole === 'AUDITOR';
+      if (!isPrivileged && callerRole === 'USER' && callerWallet) {
+        const ownerLower = (chainData?.owner || '').toLowerCase();
+        if (ownerLower !== callerWallet) {
+          continue;
         }
       }
 

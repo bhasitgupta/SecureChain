@@ -95,8 +95,8 @@ Feature requests are tracked as GitHub Issues. When suggesting enhancements:
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/bhasitgupta/SIH-26125.git
-   cd SIH-26125
+   git clone https://github.com/bhasitgupta/SecureChain.git
+   cd SecureChain
    ```
 
 2. **Install root & workspace dependencies**:
