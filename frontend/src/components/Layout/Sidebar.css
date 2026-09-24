@@ -45,6 +45,14 @@
   flex-shrink: 0;
 }
 
+.sidebar-full-logo {
+  height: 30px;
+  width: auto;
+  max-width: 170px;
+  object-fit: contain;
+  display: block;
+}
+
 .sidebar-brand-text {
   display: flex;
   flex-direction: column;

@@ -8,7 +8,7 @@ const ethers_1 = require("ethers");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const crypto_1 = require("crypto");
 const config_js_1 = require("../config.js");
-const common_1 = require("@sih26125/common");
+const common_1 = require("@securechain/common");
 const db_js_1 = require("../db.js");
 const authRoutes = async (fastify) => {
     // GET /api/auth/nonce

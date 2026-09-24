@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { createHash } from 'crypto';
-import { hashLeaf, verifyProof } from '@sih26125/merkle';
-import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
+import { hashLeaf, verifyProof } from '@securechain/merkle';
+import { DocumentAnchorRegistryAbi } from '@securechain/contracts';
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { getObject } from '../minio.js';

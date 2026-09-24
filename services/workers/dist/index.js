@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const bullmq_1 = require("bullmq");
 const ioredis_1 = require("ioredis");
 const sharp_1 = __importDefault(require("sharp"));
-const merkle_1 = require("@sih26125/merkle");
+const merkle_1 = require("@securechain/merkle");
 const config_js_1 = require("./config.js");
 const db_js_1 = require("./db.js");
 const minio_js_1 = require("./minio.js");
@@ -14,7 +14,7 @@ const chain_js_1 = require("./chain.js");
 const redis = new ioredis_1.Redis(config_js_1.config.redisUrl, {
     maxRetriesPerRequest: null,
 });
-console.log('⚡ SIH26125 Async Workers initializing...');
+console.log('⚡ SecureChain Async Workers initializing...');
 // Process a single document version (compute leaf hash + generate thumbnail + queue for batching)
 async function processVersionJob(data) {
     const { documentId, versionId, fileName, mimeType, sha256, minioKey } = data;

@@ -36,8 +36,7 @@ export default function Landing() {
       <header className="lex-nav">
         <div className="lex-nav-container">
           <div className="lex-nav-brand">
-            <img src="/logo-icon.png" alt="SecureChain" className="lex-brand-logo" />
-            <span className="lex-brand-title">SecureChain<span className="lex-dot">.</span></span>
+            <img src="/logo-full.png" alt="SecureChain" className="lex-brand-logo-full" />
           </div>
 
           <button className="lex-nav-cta" onClick={handleCtaClick}>

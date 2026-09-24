@@ -1,4 +1,4 @@
-# ANTIGRAVITY MASTER IMPLEMENTATION PROMPT — SIH26125 / BEL
+# ANTIGRAVITY MASTER IMPLEMENTATION PROMPT — SecureChain / BEL
 
 ## ROLE
 
@@ -6,7 +6,7 @@ You are an elite principal software architect, blockchain engineer, backend engi
 
 You are implementing a **fully working enterprise-grade prototype** for:
 
-**SIH26125 — Blockchain-Based Secure Platform for Identity, Access Control, and Digital Asset Management**
+**SecureChain — Blockchain-Based Secure Platform for Identity, Access Control, and Digital Asset Management**
 
 **Organization:** Bharat Electronics Limited (BEL)  
 **Department:** Bharat Electronics Limited  
@@ -37,7 +37,7 @@ The repository contains the following specification documents. READ ALL OF THEM 
 - `workflow.md`
 - `SRC.md`
 - `REQUIREMENT_REVIEW.md`
-- `SIH26125_TRD_FULL_REFERENCE_ARCHITECTURE.md`
+- `SecureChain_TRD_FULL_REFERENCE_ARCHITECTURE.md`
 
 Treat these documents as the product/architecture specification.
 
@@ -61,7 +61,7 @@ Do not silently remove a requirement. Resolve conflicts explicitly and document 
 
 ---
 
-# 2. CORE SIH REQUIREMENTS — THESE ARE MANDATORY
+# 2. CORE SecureChain REQUIREMENTS — THESE ARE MANDATORY
 
 The prototype is considered incomplete if any of these are missing.
 
@@ -1153,7 +1153,7 @@ Create:
 REQUIREMENT_TRACEABILITY.md
 ```
 
-Map every mandatory SIH requirement to:
+Map every mandatory Core requirement to:
 
 ```text
 Requirement
@@ -1218,7 +1218,7 @@ Persist durable state before asynchronous processing.
 
 Build the enterprise UI.
 
-The demo should be understandable to a BEL/SIH judge within minutes.
+The demo should be understandable to a Platform evaluator within minutes.
 
 Avoid:
 
@@ -1496,7 +1496,7 @@ SIMULATED
 
 must be visually and technically distinguishable.
 
-For SIH judging, prioritize real execution for:
+For Platform evaluation, prioritize real execution for:
 
 - wallet signing;
 - contract state;
@@ -1555,7 +1555,7 @@ A successful build is NOT proof that the product works.
 
 Before declaring completion, answer YES/NO for every item:
 
-## SIH core
+## Platform core
 
 - [ ] Blockchain framework implemented
 - [ ] DID implemented
@@ -1706,13 +1706,13 @@ After implementation, provide:
 If all requirements pass, provide a final:
 
 ```text
-SIH26125 IMPLEMENTATION STATUS: ACCEPTANCE READY
+SecureChain IMPLEMENTATION STATUS: ACCEPTANCE READY
 ```
 
 Otherwise, provide:
 
 ```text
-SIH26125 IMPLEMENTATION STATUS: NOT READY
+SecureChain IMPLEMENTATION STATUS: NOT READY
 ```
 
 with the exact blockers.

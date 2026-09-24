@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * On-chain bootstrap for SecureChain (SIH26125).
+ * On-chain bootstrap for SecureChain.
  *
  * Idempotent: checks each item before acting and skips what is already done.
  * Sends REAL transactions on Polygon Amoy — costs gas.

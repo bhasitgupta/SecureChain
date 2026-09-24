@@ -1,4 +1,4 @@
-# SecureChain (SIH26125) — On-Chain Runbook
+# SecureChain — On-Chain Runbook
 
 Comprehensive operations guide for Polygon Amoy on-chain infrastructure and service orchestration.
 
@@ -44,7 +44,7 @@ npm run dev:frontend
 | `VITE_CONTRACT_ANCHOR` | `0x8921960116d0D4a8A26aad7eA330E3f098C7F58F` | Same | Document Anchor Registry |
 | `VITE_CONTRACT_RECOVERY` | `0xf3F590b6DFA67a8453c62C8E065cdb5127518b90` | Same | Social Recovery Manager |
 | `ADMIN_PRIVATE_KEY` | Hex private key | Secret Environment Var | Relayer signer key holding ADMIN_ROLE |
-| `DATABASE_URL` | `postgresql://sih:sih26125@localhost:5433/sih26125` | Managed Postgres connection string | Metadata & cache database |
+| `DATABASE_URL` | `postgresql://securechain:securechain@localhost:5433/securechain` | Managed Postgres connection string | Metadata & cache database |
 | `REDIS_URL` | `redis://localhost:6379` | Managed Redis URL | Cache & pubsub queue |
 | `CORS_ORIGINS` | Comma-delimited origins | `https://your-app.vercel.app` | Allowed frontend origins for CORS |
 

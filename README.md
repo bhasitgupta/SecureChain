@@ -2,7 +2,7 @@
 
 ![SecureChain Hero Banner](assets/hero-banner.svg)
 
-# ⚡ SECURECHAIN (SIH-26125)
+# ⚡ SECURECHAIN
 ### *Next-Generation Zero-Knowledge Enterprise Identity, Verifiable Asset Ownership & Document Provenance Engine*
 
 [![Typing SVG](https://readme-typing-svg.herokuapp.com?font=Fira+Code&pause=1000&color=DC2626&center=true&vCenter=true&width=650&lines=Zero-Knowledge+Enterprise+Identity;Cryptographic+Document+Provenance;Immutable+Merkle+Roots+on+Polygon+Amoy;ERC-721+Monitored+Asset+NFTs;Cryptographic+RBAC+Governance)](https://github.com/bhasitgupta/SIH-26125)
@@ -132,7 +132,7 @@ npm install
 npm run infra:up
 ```
 - **MinIO Console**: `http://localhost:9001` (User: `minioadmin` / Pass: `minioadmin`)
-- **PostgreSQL**: `localhost:5432` (`sih:sih26125`)
+- **PostgreSQL**: `localhost:5432` (`securechain:securechain`)
 - **Redis**: `localhost:6379`
 
 ### 4. Start Development Servers
@@ -179,7 +179,7 @@ The contract suite and governance system enforce strict administrative authority
 ## 📦 Monorepo Structure
 
 ```
-SIH-26125/
+securechain/
 ├── assets/                  # Hero vector banners, circuit art & animated dividers
 ├── contracts/               # Solidity 0.8.20 Smart Contracts
 │   ├── src/                 # Core contract implementations
@@ -207,7 +207,7 @@ SIH-26125/
 
   <br>
 
-  <h3>⚡ SIH-26125 — Immutably Anchored. Forever Provable.</h3>
+  <h3>⚡ SECURECHAIN — Immutably Anchored. Forever Provable.</h3>
 
   <p>
     <a href="https://github.com/bhasitgupta/SIH-26125"><img src="https://img.shields.io/badge/GitHub-bhasitgupta%2FSIH--26125-000000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
@@ -218,11 +218,11 @@ SIH-26125/
   </p>
 
   <p>
-    <a href="#-securechain-sih-26125"><img src="https://img.shields.io/badge/Back_to_Top-%E2%96%B2-0B0E14?style=for-the-badge" alt="Back to top"></a>
+    <a href="#-securechain"><img src="https://img.shields.io/badge/Back_to_Top-%E2%96%B2-0B0E14?style=for-the-badge" alt="Back to top"></a>
   </p>
 
   <p>⭐ If you find this project useful, <b>give it a star</b>!</p>
 
-  <sub>© 2026 SIH-26125 (SecureChain) · Immutably anchored. Forever provable. ⚡</sub>
+  <sub>© 2026 SecureChain · Immutably anchored. Forever provable. ⚡</sub>
 
 </div>

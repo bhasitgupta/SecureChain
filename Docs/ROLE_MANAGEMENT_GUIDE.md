@@ -1,6 +1,6 @@
 # 🛡️ SecureChain Role-Based Access Control (RBAC) & Governance Guide
 
-This document defines the cryptographic role and permission architecture for **SecureChain (SIH-26125)** across smart contracts, the backend API gateway, and the web client.
+This document defines the cryptographic role and permission architecture for **SecureChain (SecureChain)** across smart contracts, the backend API gateway, and the web client.
 
 ---
 

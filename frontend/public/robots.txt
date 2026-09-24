@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://securechain-sih26125.vercel.app/sitemap.xml
+Sitemap: https://securechain1.vercel.app/sitemap.xml

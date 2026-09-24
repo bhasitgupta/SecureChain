@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * On-chain health check for the SecureChain (SIH26125) contract suite.
+ * On-chain health check for the SecureChain contract suite.
  *
  * Read-only: sends no transactions, spends no gas. Run this first whenever
  * "minting doesn't work" — it tells you exactly which precondition is missing.

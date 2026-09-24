@@ -42,6 +42,14 @@
   object-fit: contain;
 }
 
+.lex-brand-logo-full {
+  height: 36px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  display: block;
+}
+
 .lex-brand-title {
   font-size: 1.25rem;
   font-weight: 800;

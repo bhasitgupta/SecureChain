@@ -1,4 +1,4 @@
-# SIH26125 — Enterprise Test Strategy & Specification
+# SecureChain — Enterprise Test Strategy & Specification
 
 ## 1. Test Strategy
 Test the complete system across unit, integration, system, security, performance, resilience and end-to-end levels.
@@ -156,11 +156,11 @@ Admin creates user
 ## 15. Release Gate
 Critical authorization, integrity, Merkle, Polygon, versioning, performance, recovery and security tests pass. No confidential document bytes are on-chain.
 
-# FINAL ARCHITECTURE DECISIONS — SIH26125 / BEL
+# FINAL ARCHITECTURE DECISIONS — SecureChain / BEL
 
 > This section is normative. It resolves ambiguities found during the final requirement-to-design review.
 
-## A. Strict SIH26125 requirement interpretation
+## A. Strict SecureChain requirement interpretation
 
 The platform SHALL implement the following as first-class capabilities, not optional features:
 
@@ -250,7 +250,7 @@ If an indexer, cache or UI conflicts with authoritative blockchain state, the au
 
 ## D. What is intentionally beyond the literal PS
 
-The following are deliberate enterprise extensions, not substitutions for SIH requirements:
+The following are deliberate enterprise extensions, not substitutions for Core requirements:
 
 - confidential MinIO document storage;
 - SHA-256 document integrity;
@@ -283,7 +283,7 @@ The prototype SHALL NOT become:
 
 # FINAL REQUIREMENT TRACEABILITY
 
-| SIH26125 requirement | Final implementation | Status |
+| SecureChain requirement | Final implementation | Status |
 |---|---|---|
 | Blockchain-based framework | Polygon/EVM Solidity smart-contract trust plane | **FULFILLED** |
 | Decentralized identity | DID + cryptographic subject + smart-account association | **FULFILLED** |
@@ -309,11 +309,11 @@ The prototype SHALL NOT become:
 
 ## Final verdict
 
-**The merged solution is requirement-complete for SIH26125 after the decisions above.**
+**The merged solution is requirement-complete for SecureChain after the decisions above.**
 
-The additions do not replace any explicit SIH requirement. They harden the solution for BEL's enterprise/defence context.
+The additions do not replace any explicit Core requirement. They harden the solution for BEL's enterprise/defence context.
 
-# FINAL TEST ADDITIONS — SIH REQUIREMENT COMPLETENESS
+# FINAL TEST ADDITIONS — SecureChain REQUIREMENT COMPLETENESS
 
 ## 13. DID / Identity Tests
 
@@ -369,4 +369,4 @@ Verify that identity creation, role assignment, role revocation, permission upda
 
 ## 19. Release Traceability Gate
 
-No release is accepted unless every **mandatory** SIH requirement in the final traceability matrix has at least one passing automated/integration/acceptance test.
+No release is accepted unless every **mandatory** Core requirement in the final traceability matrix has at least one passing automated/integration/acceptance test.

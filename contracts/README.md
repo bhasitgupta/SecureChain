@@ -1,4 +1,4 @@
-# SIH26125 — Smart Contract Suite (Consolidated)
+# SecureChain — Smart Contract Suite (Consolidated)
 
 4 contracts. Solidity 0.8.26. Zero external dependencies.
 

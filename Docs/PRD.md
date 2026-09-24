@@ -1,4 +1,4 @@
-# SIH26125 — Enterprise Secure Identity, Access Control, Digital Asset & Document Proof Platform
+# SecureChain — Enterprise Secure Identity, Access Control, Digital Asset & Document Proof Platform
 **Product Requirements Document (PRD)**  
 **Organization:** Bharat Electronics Limited (BEL)  
 **Architecture:** Polygon / EVM + MinIO + Merkle Proofs + ERC-7947-compatible Smart-Account Recovery
@@ -78,7 +78,7 @@ Create a trusted enterprise control plane in which identity, authorization, asse
 Roles: Admin, Manager, Auditor, User. Contract authorization is the security boundary; frontend checks are only UX.
 
 ### 7.3 Digital Asset Registry
-Unique enterprise assets SHALL use ERC-721-compatible token semantics in the SIH prototype. The token represents the enterprise asset/control record, not its confidential payload.
+Unique enterprise assets SHALL use ERC-721-compatible token semantics in the SecureChain platform. The token represents the enterprise asset/control record, not its confidential payload.
 
 ### 7.4 Secure Document Ingestion
 - resumable/multipart upload;
@@ -144,11 +144,11 @@ Critical state changes emit blockchain events and are indexed.
 - Polygon root is independently verifiable.
 - Valid recovery restores the intended access subject.
 
-# FINAL ARCHITECTURE DECISIONS — SIH26125 / BEL
+# FINAL ARCHITECTURE DECISIONS — SecureChain / BEL
 
 > This section is normative. It resolves ambiguities found during the final requirement-to-design review.
 
-## A. Strict SIH26125 requirement interpretation
+## A. Strict SecureChain requirement interpretation
 
 The platform SHALL implement the following as first-class capabilities, not optional features:
 
@@ -238,7 +238,7 @@ If an indexer, cache or UI conflicts with authoritative blockchain state, the au
 
 ## D. What is intentionally beyond the literal PS
 
-The following are deliberate enterprise extensions, not substitutions for SIH requirements:
+The following are deliberate enterprise extensions, not substitutions for Core requirements:
 
 - confidential MinIO document storage;
 - SHA-256 document integrity;
@@ -271,7 +271,7 @@ The prototype SHALL NOT become:
 
 # FINAL REQUIREMENT TRACEABILITY
 
-| SIH26125 requirement | Final implementation | Status |
+| SecureChain requirement | Final implementation | Status |
 |---|---|---|
 | Blockchain-based framework | Polygon/EVM Solidity smart-contract trust plane | **FULFILLED** |
 | Decentralized identity | DID + cryptographic subject + smart-account association | **FULFILLED** |
@@ -297,15 +297,15 @@ The prototype SHALL NOT become:
 
 ## Final verdict
 
-**The merged solution is requirement-complete for SIH26125 after the decisions above.**
+**The merged solution is requirement-complete for SecureChain after the decisions above.**
 
-The additions do not replace any explicit SIH requirement. They harden the solution for BEL's enterprise/defence context.
+The additions do not replace any explicit Core requirement. They harden the solution for BEL's enterprise/defence context.
 
 # FINAL PRODUCT REQUIREMENT ADDENDUM
 
 ## Mandatory MVP acceptance journey
 
-The SIH demonstration MUST visibly execute this sequence:
+The Platform demonstration MUST visibly execute this sequence:
 
 `Admin → create DID identity → verify cryptographic control → assign USER role → mint NFT asset → allocate NFT to identity → attempt unauthorized operation → REJECT → change permission → authorized operation → transfer asset → Auditor verifies complete history`
 

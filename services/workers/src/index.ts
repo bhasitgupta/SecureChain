@@ -1,8 +1,8 @@
 import { Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import sharp from 'sharp';
-import { hashLeaf, buildMerkleTree } from '@sih26125/merkle';
-import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
+import { hashLeaf, buildMerkleTree } from '@securechain/merkle';
+import { DocumentAnchorRegistryAbi } from '@securechain/contracts';
 import { config } from './config.js';
 import { query, pool } from './db.js';
 import { getObject, putObject } from './minio.js';
@@ -12,7 +12,7 @@ const redis = new Redis(config.redisUrl, {
   maxRetriesPerRequest: null,
 });
 
-console.log('⚡ SIH26125 Async Workers initializing...');
+console.log('⚡ SecureChain Async Workers initializing...');
 
 // Process a single document version (compute leaf hash + generate thumbnail + queue for batching)
 async function processVersionJob(data: {

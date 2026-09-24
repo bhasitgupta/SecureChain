@@ -1,5 +1,5 @@
 {
-  "name": "@sih26125/common",
+  "name": "@securechain/common",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",

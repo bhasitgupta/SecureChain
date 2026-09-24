@@ -9,9 +9,9 @@ const path_1 = __importDefault(require("path"));
 dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), '../../.env') });
 dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), '.env') });
 exports.config = {
-    polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology',
+    polygonRpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-amoy.drpc.org',
     chainId: parseInt(process.env.CHAIN_ID || '80002', 10),
-    databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5433/sih26125',
+    databaseUrl: process.env.DATABASE_URL || 'postgresql://securechain:securechain@localhost:5433/securechain',
     contracts: {
         iam: (process.env.IAM_ADDRESS || ''),
         nft: (process.env.NFT_ADDRESS || ''),

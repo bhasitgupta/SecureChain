@@ -32,11 +32,10 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
       {/* Brand Header */}
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <img src="/logo-icon.png" alt="SecureChain" className="logo-icon" />
-          {(!collapsed || mobileOpen) && (
-            <div className="sidebar-brand-text">
-              <span className="logo-text">SecureChain<span className="brand-dot">.</span></span>
-            </div>
+          {collapsed && !mobileOpen ? (
+            <img src="/logo-icon.png" alt="SecureChain" className="logo-icon" />
+          ) : (
+            <img src="/logo-full.png" alt="SecureChain" className="sidebar-full-logo" />
           )}
         </div>
 

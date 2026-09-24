@@ -1,5 +1,5 @@
 {
-  "name": "@sih26125/indexer",
+  "name": "@securechain/indexer",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",
@@ -9,8 +9,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@sih26125/common": "*",
-    "@sih26125/contracts": "*",
+    "@securechain/common": "*",
+    "@securechain/contracts": "*",
     "dotenv": "^16.4.5",
     "pg": "^8.13.1",
     "ethers": "^6.13.4"

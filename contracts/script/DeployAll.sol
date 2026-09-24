@@ -8,7 +8,7 @@ import "../src/RecoveryManager.sol";
 
 /**
  * @title DeployAll
- * @notice Deploys the full SIH26125 contract suite in correct dependency order
+ * @notice Deploys the full SecureChain contract suite in correct dependency order
  */
 contract DeployAll {
     struct Deployed {

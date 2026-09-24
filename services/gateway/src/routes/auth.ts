@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import { config } from '../config.js';
-import { formatDidPkh, hashDid } from '@sih26125/common';
+import { formatDidPkh, hashDid } from '@securechain/common';
 import { query } from '../db.js';
 
 export const authRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {

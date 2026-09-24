@@ -1,4 +1,4 @@
-# Security Policy — SECURECHAIN (SIH-26125)
+# Security Policy — SECURECHAIN
 
 ## 🛡️ Supported Versions
 
@@ -58,7 +58,7 @@ To help us investigate and patch vulnerabilities swiftly, please provide:
   - `RecoveryManager.sol`: Guardian quorum evasion, premature timelock bypass.
 - **Microservices & API Gateway**:
   - REST API endpoint authentication & authorization bypasses (`/identity`, `/assets`, `/documents`, `/audit`).
-  - Merkle tree proof forgery in `@sih26125/merkle`.
+  - Merkle tree proof forgery in `@securechain/merkle`.
   - Rate limiting evasion and Denial of Service on Fastify gateway.
 - **Confidential Storage & Data Ingestion**:
   - MinIO S3 bucket traversal or leakage of plaintext unencrypted document blobs.
@@ -115,9 +115,9 @@ Then **SecureChain will not initiate legal action** against you, and will formal
 
 - **Lead Security Contact**: Bhasit Gupta
 - **Email**: [bhasitgupta@gmail.com](mailto:bhasitgupta@gmail.com)
-- **Subject Prefix**: `[SECURITY] SIH-26125 Vulnerability Report`
+- **Subject Prefix**: `[SECURITY] SecureChain Vulnerability Report`
 - **PGP Key**: Available on request
 
 ---
 
-<sub>© 2026 SIH-26125 (SecureChain) · Immutably anchored. Forever provable. ⚡</sub>
+<sub>© 2026 SecureChain · Immutably anchored. Forever provable. ⚡</sub>

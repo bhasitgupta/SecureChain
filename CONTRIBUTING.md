@@ -1,4 +1,4 @@
-# Contributing to SECURECHAIN (SIH-26125)
+# Contributing to SECURECHAIN
 
 Thank you for your interest in contributing to **SECURECHAIN**! We welcome contributions from developers, researchers, auditors, and community members of all backgrounds.
 
@@ -133,7 +133,7 @@ Feature requests are tracked as GitHub Issues. When suggesting enhancements:
 ## 📂 Monorepo Structure
 
 ```text
-SIH-26125/
+securechain/
 ├── contracts/               # Solidity smart contracts & Foundry/Hardhat configs
 ├── frontend/                # React 19 + Vite web client & HUD interface
 ├── services/

@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import jwt from 'jsonwebtoken';
-import { Roles } from '@sih26125/common';
+import { Roles } from '@securechain/common';
 import { config } from './config.js';
 import { getIamContract, provider } from './chain.js';
 

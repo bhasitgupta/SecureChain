@@ -13,7 +13,7 @@ exports.config = {
     chainId: parseInt(process.env.CHAIN_ID || '80002', 10),
     anchorAddress: (process.env.ANCHOR_ADDRESS || ''),
     adminPrivateKey: (process.env.ADMIN_PRIVATE_KEY || ''),
-    databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5433/sih26125',
+    databaseUrl: process.env.DATABASE_URL || 'postgresql://securechain:securechain@localhost:5433/securechain',
     redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
     minio: {
         endPoint: process.env.MINIO_ENDPOINT || 'localhost',

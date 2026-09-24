@@ -1,25 +1,25 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: sih-postgres
+    container_name: securechain-postgres
     environment:
-      POSTGRES_DB: sih26125
-      POSTGRES_USER: sih
-      POSTGRES_PASSWORD: sih26125
+      POSTGRES_DB: securechain
+      POSTGRES_USER: securechain
+      POSTGRES_PASSWORD: securechain
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sih -d sih26125"]
+      test: ["CMD-SHELL", "pg_isready -U securechain -d securechain"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: sih-redis
+    container_name: securechain-redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -30,7 +30,7 @@ services:
 
   minio:
     image: quay.io/minio/minio:latest
-    container_name: sih-minio
+    container_name: securechain-minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -48,7 +48,7 @@ services:
 
   minio-init:
     image: quay.io/minio/mc:latest
-    container_name: sih-minio-init
+    container_name: securechain-minio-init
     depends_on:
       minio:
         condition: service_healthy

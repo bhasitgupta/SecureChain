@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { GrantRoleSchema, Roles } from '@sih26125/common';
+import { GrantRoleSchema, Roles } from '@securechain/common';
 import { config } from '../config.js';
 import { getIamContract, adminSigner, provider } from '../chain.js';
 import { query } from '../db.js';

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.identityRoutes = void 0;
-const common_1 = require("@sih26125/common");
+const common_1 = require("@securechain/common");
 const config_js_1 = require("../config.js");
 const db_js_1 = require("../db.js");
 const chain_js_1 = require("../chain.js");

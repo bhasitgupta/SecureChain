@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { formatDidPkh, hashDid } from '@sih26125/common';
+import { formatDidPkh, hashDid } from '@securechain/common';
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { putObject, getObject, getPublicObjectUrl } from '../minio.js';

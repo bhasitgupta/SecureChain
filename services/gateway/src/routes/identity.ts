@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
-import { RegisterIdentitySchema, formatDidPkh, hashDid } from '@sih26125/common';
+import { RegisterIdentitySchema, formatDidPkh, hashDid } from '@securechain/common';
 import { config } from '../config.js';
 import { query } from '../db.js';
 import { getIamContract, adminSigner, provider } from '../chain.js';

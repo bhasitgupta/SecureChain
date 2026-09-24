@@ -1,4 +1,4 @@
-# SIH26125 — Business Requirements Document (BRD)
+# SecureChain — Business Requirements Document (BRD)
 
 ## 1. Business Purpose
 BEL requires a trusted mechanism to manage identity, access, digital assets and sensitive documents while maintaining verifiable historical evidence.
@@ -66,7 +66,7 @@ Users must not wait for blockchain confirmation merely to finish uploading a doc
 The system must provide durable acknowledgement quickly while downstream proof processing continues asynchronously.
 
 ## 8. BEL Product Context
-Publicly described BEL offerings such as SecureDoc, SecureLedger and Enterprise Access Control System provide relevant context. The SIH solution should be positioned as an integrated architecture combining identity, access control, digital assets, confidential document proof/versioning and programmable recovery, without making unsupported claims about undocumented internal capabilities.
+Publicly described BEL offerings such as SecureDoc, SecureLedger and Enterprise Access Control System provide relevant context. The SecureChain solution should be positioned as an integrated architecture combining identity, access control, digital assets, confidential document proof/versioning and programmable recovery, without making unsupported claims about undocumented internal capabilities.
 
 ## 9. Scope
 ### In scope
@@ -96,11 +96,11 @@ DeFi, crypto payments, NFT marketplace, raw documents on-chain, arbitrary EOA re
 | PII leakage | Off-chain sensitive storage |
 | Indexer corruption | Rebuild from blockchain |
 
-# FINAL ARCHITECTURE DECISIONS — SIH26125 / BEL
+# FINAL ARCHITECTURE DECISIONS — SecureChain / BEL
 
 > This section is normative. It resolves ambiguities found during the final requirement-to-design review.
 
-## A. Strict SIH26125 requirement interpretation
+## A. Strict SecureChain requirement interpretation
 
 The platform SHALL implement the following as first-class capabilities, not optional features:
 
@@ -190,7 +190,7 @@ If an indexer, cache or UI conflicts with authoritative blockchain state, the au
 
 ## D. What is intentionally beyond the literal PS
 
-The following are deliberate enterprise extensions, not substitutions for SIH requirements:
+The following are deliberate enterprise extensions, not substitutions for Core requirements:
 
 - confidential MinIO document storage;
 - SHA-256 document integrity;
@@ -223,7 +223,7 @@ The prototype SHALL NOT become:
 
 # FINAL REQUIREMENT TRACEABILITY
 
-| SIH26125 requirement | Final implementation | Status |
+| SecureChain requirement | Final implementation | Status |
 |---|---|---|
 | Blockchain-based framework | Polygon/EVM Solidity smart-contract trust plane | **FULFILLED** |
 | Decentralized identity | DID + cryptographic subject + smart-account association | **FULFILLED** |
@@ -249,9 +249,9 @@ The prototype SHALL NOT become:
 
 ## Final verdict
 
-**The merged solution is requirement-complete for SIH26125 after the decisions above.**
+**The merged solution is requirement-complete for SecureChain after the decisions above.**
 
-The additions do not replace any explicit SIH requirement. They harden the solution for BEL's enterprise/defence context.
+The additions do not replace any explicit Core requirement. They harden the solution for BEL's enterprise/defence context.
 
 # FINAL BUSINESS REQUIREMENT CORRECTIONS
 

@@ -1,7 +1,7 @@
 /**
- * Shared on-chain helpers for the SecureChain (SIH26125) admin scripts.
+ * Shared on-chain helpers for the SecureChain admin scripts.
  *
- * ABIs are re-exported from the @sih26125/contracts workspace package so the
+ * ABIs are re-exported from the @securechain/contracts workspace package so the
  * scripts, gateway, workers and indexer can never drift apart.
  */
 import { ethers } from 'ethers';
@@ -10,7 +10,7 @@ import {
   EnterpriseAssetNFTAbi,
   DocumentAnchorRegistryAbi,
   RecoveryManagerAbi,
-} from '@sih26125/contracts';
+} from '@securechain/contracts';
 
 export const IAM_ABI = IdentityAndAccessManagerAbi;
 export const NFT_ABI = EnterpriseAssetNFTAbi;

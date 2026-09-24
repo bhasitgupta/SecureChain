@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Post-bootstrap smoke test for SecureChain (SIH26125).
+ * Post-bootstrap smoke test for SecureChain.
  *
  * Read-only — sends no transactions, spends no gas.
  * Reads back the most recently minted token and asserts chain state is correct.

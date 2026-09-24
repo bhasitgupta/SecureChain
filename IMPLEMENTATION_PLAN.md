@@ -1,4 +1,4 @@
-# SIH26125 — Implementation Plan
+# SecureChain — Implementation Plan
 
 **Status:** proposed, awaiting sign-off
 **Date:** 2026-09-14
@@ -17,7 +17,7 @@
 | `PRD.md` | Product requirements, modules, MVP, success criteria | Adds the mandatory MVP acceptance journey |
 | `SRS.md` | Functional requirements with IDs, state machine, API, RBAC matrix, error codes | Adds `SRS-ID/ASSET/RBAC/CONF` requirement IDs |
 | `TRD.md` | Technical design, contract decomposition, proof record, key management | Strict subset of the full reference architecture |
-| `SIH26125_TRD_FULL_REFERENCE_ARCHITECTURE.md` | `TRD.md` plus expanded sections 2.1–2.23 | Authoritative architecture reference, including the 12 non-negotiable invariants |
+| `SecureChain_TRD_FULL_REFERENCE_ARCHITECTURE.md` | `TRD.md` plus expanded sections 2.1–2.23 | Authoritative architecture reference, including the 12 non-negotiable invariants |
 | `SRC.md` | Security, reliability and compliance controls, recovery threat model | Compliance posture limits |
 | `WPRD.md` | Operational workflow, upload ordering, P0/P1 priorities | UX rule on verification status |
 | `workflow.md` | Master workflow, failure principle | Overlaps `WPRD.md` heavily |
@@ -28,7 +28,7 @@
 
 1. Eight of the ten files each append an identical copy of the *FINAL ARCHITECTURE DECISIONS* (sections A–E) and *FINAL REQUIREMENT TRACEABILITY* blocks — roughly 130 duplicated lines per file. Any future edit must be applied eight times or the corpus silently diverges.
    **Recommendation:** extract one `NORMATIVE.md` and replace the copies with a link. Do this only if the submission format allows it.
-2. `TRD.md` is fully contained in `SIH26125_TRD_FULL_REFERENCE_ARCHITECTURE.md`.
+2. `TRD.md` is fully contained in `SecureChain_TRD_FULL_REFERENCE_ARCHITECTURE.md`.
    **Recommendation:** keep the full reference architecture as the single technical source and retire `TRD.md`, or mark it explicitly as an abridged summary.
 3. `workflow.md` and `WPRD.md` overlap substantially. Keep both only if `WPRD.md` stays product-facing and `workflow.md` stays operations-facing.
 
@@ -39,7 +39,7 @@ These are real conflicts between documents, not stylistic differences. Each has 
 | # | Conflict | Sources | Proposed resolution |
 |---|---|---|---|
 | C1 | Merkle batch granularity. Version-lineage diagrams show `V1→B1→R1→TX1`, `V2→B2→R2→TX2`, i.e. one batch, one root and one transaction per version. That is exactly the "one transaction per document" pattern the same corpus forbids. | Full ref. arch. §2.10, `TRD.md` §11 vs `PRD.md` §5 non-goals, "Chain transaction policy" | A batch spans many versions across many documents. Each version maps to `(batchId, leafIndex)`. The lineage diagrams are illustrations of version history, not of batching policy. Documented in ADR-004. |
-| C2 | Manager mint rights. `SRS.md` §7 gives Manager `Mint = Policy`. The reference architecture gives Manager `Mint = ✗` and states the SIH invariant that only Admin may mint and perform initial allocation. | `SRS.md` §7 vs full ref. arch. §2.8, `SRS-ASSET-002/003` | Manager cannot mint and cannot perform initial allocation, enforced in contract with no policy escape hatch. `SRS.md` §7 to be corrected. |
+| C2 | Manager mint rights. `SRS.md` §7 gives Manager `Mint = Policy`. The reference architecture gives Manager `Mint = ✗` and states the Core invariant that only Admin may mint and perform initial allocation. | `SRS.md` §7 vs full ref. arch. §2.8, `SRS-ASSET-002/003` | Manager cannot mint and cannot perform initial allocation, enforced in contract with no policy escape hatch. `SRS.md` §7 to be corrected. |
 | C3 | Manager transfer rights. `SRS.md` §7 gives Manager `Transfer = Yes` unconditionally. | `SRS.md` §7 vs full ref. arch. §2.8 | Transfer is policy-controlled for Manager and User, evaluated in `AssetGovernance`. |
 | C4 | Golden E2E ordering. The golden test has "Manager allocates asset", which contradicts Admin-only initial allocation. | `test.md` §14 vs `SRS-ASSET-003` | Admin performs the initial allocation; Manager performs a later authorised transfer. Golden script corrected accordingly. |
 | C5 | Latest-version pointer authority. Declared as "authoritative application/domain state with audit trail", i.e. an off-chain database row. Nothing on-chain then witnesses which version is current, so a direct database write could silently repoint `latest` with no cryptographic evidence — while the UX rule forbids trusting derived state. | Data authority tables vs `WPRD.md` UX rule, `BRD.md` KPIs | Keep the pointer in Postgres for fast retrieval, but (a) make the pointer table append-only with actor, timestamp and previous value, and (b) include `documentIdHash` and `versionId` in the Merkle leaf preimage so full version lineage is reconstructible from anchored roots plus the retained proof set. |
@@ -83,7 +83,7 @@ These are real conflicts between documents, not stylistic differences. Each has 
 ## 3. Repository layout
 
 ```text
-sih26125/
+securechain/
   contracts/                 Foundry project
     src/  test/  script/
   packages/

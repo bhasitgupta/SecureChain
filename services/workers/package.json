@@ -1,5 +1,5 @@
 {
-  "name": "@sih26125/workers",
+  "name": "@securechain/workers",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",
@@ -9,9 +9,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@sih26125/common": "*",
-    "@sih26125/contracts": "*",
-    "@sih26125/merkle": "*",
+    "@securechain/common": "*",
+    "@securechain/contracts": "*",
+    "@securechain/merkle": "*",
     "bullmq": "^5.21.2",
     "dotenv": "^16.4.5",
     "ioredis": "^5.4.1",

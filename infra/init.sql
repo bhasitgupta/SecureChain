@@ -1,4 +1,4 @@
--- SIH26125 Database Schema
+-- SecureChain Database Schema
 -- Run automatically by docker-compose init
 
 -- Identity cache (from chain events)

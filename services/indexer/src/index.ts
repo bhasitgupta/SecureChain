@@ -4,7 +4,7 @@ import {
   EnterpriseAssetNFTAbi,
   DocumentAnchorRegistryAbi,
   RecoveryManagerAbi,
-} from '@sih26125/contracts';
+} from '@securechain/contracts';
 import { config } from './config.js';
 import { query } from './db.js';
 
@@ -14,7 +14,7 @@ const provider = new ethers.JsonRpcProvider(
   { batchMaxCount: 1 }
 );
 
-console.log('🔍 SIH26125 Blockchain Indexer starting...');
+console.log('🔍 SecureChain Blockchain Indexer starting...');
 
 async function getCheckpoint(contractAddress: string): Promise<bigint> {
   const res = await query(

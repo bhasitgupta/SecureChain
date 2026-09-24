@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rolesRoutes = void 0;
-const common_1 = require("@sih26125/common");
+const common_1 = require("@securechain/common");
 const config_js_1 = require("../config.js");
 const chain_js_1 = require("../chain.js");
 const db_js_1 = require("../db.js");
@@ -9,7 +9,6 @@ const db_js_1 = require("../db.js");
 const memoryRoles = {
     '0x8292040fb8adbe10333a74b2bf79ebfbf3b0e41c': 'ADMIN',
     '0xff00d19db6668537116ecda91ac07fa448a2223e': 'ADMIN',
-    '0x3d95ee72e01c793d097ae7aa9177d80fd3dc7a6a': 'AUDITOR',
 };
 // Ensure role persistence table exists
 let dbInitialized = false;

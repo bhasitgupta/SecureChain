@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyRoutes = void 0;
 const crypto_1 = require("crypto");
-const merkle_1 = require("@sih26125/merkle");
+const merkle_1 = require("@securechain/merkle");
 const config_js_1 = require("../config.js");
 const db_js_1 = require("../db.js");
 const minio_js_1 = require("../minio.js");

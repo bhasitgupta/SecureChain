@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
 import { config } from './config.js';
-import { DocumentAnchorRegistryAbi } from '@sih26125/contracts';
+import { DocumentAnchorRegistryAbi } from '@securechain/contracts';
 
 export const provider = new ethers.JsonRpcProvider(
   config.polygonRpcUrl || 'https://polygon-amoy.drpc.org',

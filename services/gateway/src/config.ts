@@ -24,7 +24,7 @@ export const config = {
   adminPrivateKey: (process.env.ADMIN_PRIVATE_KEY || '') as `0x${string}`,
   
   // Database
-  databaseUrl: process.env.DATABASE_URL || 'postgresql://sih:sih26125@localhost:5433/sih26125',
+  databaseUrl: process.env.DATABASE_URL || 'postgresql://securechain:securechain@localhost:5433/securechain',
   
   // Redis
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',

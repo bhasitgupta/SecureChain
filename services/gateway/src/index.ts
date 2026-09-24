@@ -13,7 +13,7 @@ import { recoveryRoutes } from './routes/recovery.js';
 import { auditRoutes } from './routes/audit.js';
 
 import { ethers } from 'ethers';
-import { Roles } from '@sih26125/common';
+import { Roles } from '@securechain/common';
 import { adminSigner, provider, getIamContract } from './chain.js';
 
 import { ensureBucketsExist, minioClient } from './minio.js';
@@ -104,7 +104,7 @@ async function main() {
 
     return {
       status: 'ok',
-      service: 'sih26125-gateway',
+      service: 'securechain-gateway',
       chainId: config.chainId,
       contracts: {
         iam: config.iamAddress,

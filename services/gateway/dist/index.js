@@ -17,7 +17,7 @@ const verify_js_1 = require("./routes/verify.js");
 const recovery_js_1 = require("./routes/recovery.js");
 const audit_js_1 = require("./routes/audit.js");
 const ethers_1 = require("ethers");
-const common_1 = require("@sih26125/common");
+const common_1 = require("@securechain/common");
 const chain_js_1 = require("./chain.js");
 const minio_js_1 = require("./minio.js");
 const fastify = (0, fastify_1.default)({
@@ -98,7 +98,7 @@ async function main() {
         }
         return {
             status: 'ok',
-            service: 'sih26125-gateway',
+            service: 'securechain-gateway',
             chainId: config_js_1.config.chainId,
             contracts: {
                 iam: config_js_1.config.iamAddress,

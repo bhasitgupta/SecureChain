@@ -5,7 +5,7 @@ import {
   EnterpriseAssetNFTAbi,
   DocumentAnchorRegistryAbi,
   RecoveryManagerAbi,
-} from '@sih26125/contracts';
+} from '@securechain/contracts';
 
 export const provider = new ethers.JsonRpcProvider(
   config.polygonRpcUrl || 'https://polygon-amoy.drpc.org',

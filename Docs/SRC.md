@@ -1,4 +1,4 @@
-# SIH26125 — Security, Reliability & Compliance Controls (SRC)
+# SecureChain — Security, Reliability & Compliance Controls (SRC)
 
 ## 1. Security Architecture
 Security is implemented in layers:
@@ -113,11 +113,11 @@ Retention policy is configurable to organizational requirements.
 ## 11. Security Acceptance
 No critical/high unresolved smart-contract security defect. No confidential document bytes on-chain. Unauthorized actions fail. Tampering is detected. Recovery abuse tests fail safely.
 
-# FINAL ARCHITECTURE DECISIONS — SIH26125 / BEL
+# FINAL ARCHITECTURE DECISIONS — SecureChain / BEL
 
 > This section is normative. It resolves ambiguities found during the final requirement-to-design review.
 
-## A. Strict SIH26125 requirement interpretation
+## A. Strict SecureChain requirement interpretation
 
 The platform SHALL implement the following as first-class capabilities, not optional features:
 
@@ -207,7 +207,7 @@ If an indexer, cache or UI conflicts with authoritative blockchain state, the au
 
 ## D. What is intentionally beyond the literal PS
 
-The following are deliberate enterprise extensions, not substitutions for SIH requirements:
+The following are deliberate enterprise extensions, not substitutions for Core requirements:
 
 - confidential MinIO document storage;
 - SHA-256 document integrity;
@@ -240,7 +240,7 @@ The prototype SHALL NOT become:
 
 # FINAL REQUIREMENT TRACEABILITY
 
-| SIH26125 requirement | Final implementation | Status |
+| SecureChain requirement | Final implementation | Status |
 |---|---|---|
 | Blockchain-based framework | Polygon/EVM Solidity smart-contract trust plane | **FULFILLED** |
 | Decentralized identity | DID + cryptographic subject + smart-account association | **FULFILLED** |
@@ -266,9 +266,9 @@ The prototype SHALL NOT become:
 
 ## Final verdict
 
-**The merged solution is requirement-complete for SIH26125 after the decisions above.**
+**The merged solution is requirement-complete for SecureChain after the decisions above.**
 
-The additions do not replace any explicit SIH requirement. They harden the solution for BEL's enterprise/defence context.
+The additions do not replace any explicit Core requirement. They harden the solution for BEL's enterprise/defence context.
 
 # FINAL SECURITY / RELIABILITY / COMPLIANCE CONTROLS
 
